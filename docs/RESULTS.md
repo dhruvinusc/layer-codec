@@ -21,6 +21,11 @@ Sandbox run (FFmpeg 4.4), Nov 9. Matches Project doc 05 for every clip. Frames c
 
 Upright check: `docs/img/p0_upright_thumbnails.jpg` (frame 0 of each clip; Stairs text reads correctly, so 180 is a true rotation, not a mirror; sky is blue, so channel order is RGB).
 
+## P0 playback (ProbeVideo --play, Mac, uninterrupted first pass)
+| Clip | Frames | Measured | Clip duration | Error | Late frames (> half a period) | Window scale |
+|---|---|---|---|---|---|---|
+| video2 | 383 | 12.74 s | 12.77 s | -0.2% | 4 (1.0%) | 0.92 |
+
 ## P0 speed gate
 | Test | Result | Target |
 |---|---|---|
