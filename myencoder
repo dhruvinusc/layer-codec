@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Usage is defined by the brief; all arguments pass through unchanged.
+set -euo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+JAR="$DIR/build/libs/layer-codec.jar"
+if [[ ! -f "$JAR" ]]; then
+  echo "error: $JAR not found. Build first: ./gradlew build" >&2
+  exit 1
+fi
+# Java 21 is pinned here so the codec never depends on the default 'java'.
+# Order: LAYER_CODEC_JAVA, macOS java_home -v 21, JAVA_HOME, PATH.
+JAVA="${LAYER_CODEC_JAVA:-}"
+if [[ -z "$JAVA" && -x /usr/libexec/java_home ]]; then
+  JH="$(/usr/libexec/java_home -v 21 2>/dev/null || true)"
+  if [[ -n "$JH" ]]; then JAVA="$JH/bin/java"; fi
+fi
+if [[ -z "$JAVA" && -n "${JAVA_HOME:-}" ]]; then JAVA="$JAVA_HOME/bin/java"; fi
+JAVA="${JAVA:-java}"
+exec "$JAVA" -Xmx4g -cp "$JAR" codec.encoder.EncoderMain "$@"
