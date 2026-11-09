@@ -10,4 +10,7 @@ Running handoff between build windows. Newest entry at the bottom.
 - Prototype files (naive_overlay.jpg, probe_motion.py) not available; see DECISIONS P0-D5.
 - P0.4 Types.java written as proposed (planar int frames, VideoInfo, MotionField, Labels). AWAITING Dhruvin's yes; P1 must not build on it before that.
 - P0.5 VideoIO + ProbeVideo done. 15/15 tests in sandbox, including a synthetic FFmpeg clip that checks RGB order and the signed-byte trap. Probe matches 05 for all 4 clips; thumbnails upright (docs/img/p0_upright_thumbnails.jpg).
-- Next: Dhruvin runs ProbeVideo on the Mac (FFmpeg 7.1 path), then P0.6 ColorConv + Pad.
+- P0.5 proven on the Mac (FFmpeg 7.1): all 4 MATCH, rotations 0/90/180/180, 1080p read at 175 fps; Mac thumbnails checked upright.
+- P0.6 done: ColorConv (77/150/29 fixed point, gray exact, within 1 level of float), Pad (edge replicate right/bottom, crop). 25 tests.
+- P0.7 code done: Clock (index-based deadlines, tested with fake time), Display (Swing, int raster, blocking paint, scale to fit), ProbeVideo --play with 30-frame step-back ring. 29 tests. Needs the Mac run for evidence (sandbox is headless).
+- Next: Mac play test (video2 about 12.75 s, SAL late frames), then P0.8 speed gate.
