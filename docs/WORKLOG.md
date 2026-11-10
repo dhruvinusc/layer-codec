@@ -37,3 +37,16 @@ The VM reaches GitHub but not Maven Central or services.gradle.org.
 - Prototype files moved to `docs/img/naive_probe_overlay.jpg` and `tools/prototype/probe_motion.py` (P0-D5 updated). Commit dcab1a9.
 - Explain-back pending: Dhruvin's P1.1 prediction (which blocks recover (-7,2) exactly; flat frame result).
 - Next: P1.2 VizSeg v1 (overlay PNGs, arrows, stats CSV, overlay mp4).
+
+## 2026-11-10, Window B (P2)
+- [B/P2] P2.0 sync: head 6dfe7bf, sandbox rebuilt from the recipe (Temurin 21.0.9), 39/39 green (32 P0 + 7 from A's P1.1). Types used: Frame (int planes 0..255, row-major), VideoInfo (true w/h, padded w/h, fps num/den), Labels (macroblock grid, `get(col,row)`, 0 = bg). Pad.pad/crop for 1080 to 1088.
+- [B/P2] Plan:
+  1. P2.1 Dct: separable orthonormal 8x8, level shift 128, cosine table, zero-skip inverse; oracle = textbook double sum in src/test.
+  2. P2.2 Quant: symmetric round(c / 2^n) to short, dequant q * 2^n, clamp pixels 0..255.
+  3. P2.3 CmpFormat: byte table shown to Dhruvin, frozen only after his yes. Streaming writer, offset-table reader.
+  4. P2.4 Zio: Deflater level 1, always end(), loop to finished().
+  5. P2.5 DecodeCore: pure, thread-safe payload -> cropped RGB frame + 8x8 label map.
+  6. P2.6 CodecHarness with fake checkerboard labels; P2.7 Psnr (overall, fg, bg); P2.8 CmpDump in the brief's text layout.
+  7. P2.9 Mac measurements on video2 (120 f) and SAL (60 f) for (0,0) (2,5) (5,2) (1,7) (4,4).
+  8. Codec constants (zlib level, magic, version) stay as named constants in my own classes, so frozen Config is not touched.
+- [B/P2] Next: P2.1 Dct.
