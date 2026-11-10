@@ -25,6 +25,8 @@ Upright check: `docs/img/p0_upright_thumbnails.jpg` (frame 0 of each clip; Stair
 | Clip | Frames | Measured | Clip duration | Error | Late frames (> half a period) | Window scale |
 |---|---|---|---|---|---|---|
 | video2 | 383 | 12.74 s | 12.77 s | -0.2% | 4 (1.0%) | 0.92 |
+| video2 (rerun) | 383 | 12.75 s | 12.77 s | -0.1% | 0 (0.0%) | 0.92 |
+| SAL, Java2D scaling (before P0-D8) | 437 | 20.83 s | 14.57 s | +43.0% | 437 (100%) | 0.72 |
 
 ## P0 speed gate
 | Test | Result | Target |

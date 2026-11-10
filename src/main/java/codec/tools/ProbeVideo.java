@@ -74,6 +74,8 @@ public final class ProbeVideo {
     private static final class FrameRing {
         private final Frame[] slots = new Frame[RING];
         private int newest = -1;
+        private long decodeNanos;
+        private int decoded;
 
         FrameRing(int w, int h) {
             for (int i = 0; i < RING; i++) {
@@ -97,9 +99,12 @@ public final class ProbeVideo {
             if (index != newest + 1) {
                 return false;
             }
+            long t0 = System.nanoTime();
             if (!reader.read(slots[index % RING])) {
                 return false;
             }
+            decodeNanos += System.nanoTime() - t0;
+            decoded++;
             newest = index;
             return true;
         }
@@ -135,6 +140,9 @@ public final class ProbeVideo {
         private boolean reported;
         private long firstShowNanos;
         private int late;
+        private long loadNanos;
+        private long paintNanos;
+        private int painted;
 
         PlayLoop(VideoIO.Reader reader, Display display, VideoInfo info, String name) {
             this.reader = reader;
@@ -218,6 +226,9 @@ public final class ProbeVideo {
 
         private void showFrame(int index) {
             display.show(ring.get(index));
+            loadNanos += display.lastLoadNanos();
+            paintNanos += display.lastPaintNanos();
+            painted++;
             if (index == 0) {
                 firstShowNanos = clock.nowNanos();
             }
@@ -246,7 +257,14 @@ public final class ProbeVideo {
             System.out.printf("end of clip: %d frames played in %.2f s (clip %.2f s, error %+.1f%%), "
                     + "late frames %d (%.1f%%)%n", frames, measured, expected,
                     100.0 * (measured - expected) / expected, late, 100.0 * late / frames);
+            System.out.printf("per frame (ms): decode %.1f, pack+scale %.1f, paint %.1f, budget %.1f%n",
+                    ms(ring.decodeNanos, ring.decoded), ms(loadNanos, painted), ms(paintNanos, painted),
+                    clock.periodNanos() / 1e6);
             System.out.println("still open: left/right to step, q to quit");
+        }
+
+        private static double ms(long nanos, int count) {
+            return count == 0 ? 0 : nanos / 1e6 / count;
         }
     }
 
