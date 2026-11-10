@@ -13,9 +13,9 @@ Due Wed Dec 2, 2026.
 ## B. Part 1: Segmentation (encoder)
 - [ ] B1 Frame 0 treated as an I frame
 - [ ] B2 Every later frame split into 16x16 macroblocks
-- [ ] B3 One motion vector per macroblock, computed against the PREVIOUS frame
-- [ ] B4 Block MAD matching, brute force or a fast search (FME is "even better")
-- [ ] B5 Search uses ONE component (Y preferred, R allowed)
+- [ ] B3 One motion vector per macroblock, computed against the PREVIOUS frame (partial: MotionEstimator.fullSearch, MotionEstimatorTest.recoversKnownShiftsIncludingNegative; wired per frame in P1.10)
+- [ ] B4 Block MAD matching, brute force or a fast search (FME is "even better") (partial: brute force done, MotionEstimatorTest.matchesTextbookOracleOnMixedContent, RESULTS P1.1; fast search P1.3)
+- [ ] B5 Search uses ONE component (Y preferred, R allowed) (partial: fullSearch takes the Y plane from ColorConv.luma; wired in P1.10)
 - [ ] B6 Background = near-zero MVs (static camera) or one constant MV (moving camera)
 - [ ] B7 Foreground regions are (a) contiguous and (b) consistent in MV direction ("important!")
 - [ ] B8 Several independently moving regions supported

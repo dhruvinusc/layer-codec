@@ -43,5 +43,19 @@ Per-frame cost for SAL with P0-D8 (Mac): decode 5.5 to 5.6 ms, pack+scale 1.6 ms
 Decoder budget at 1080p, serial: inflate 15.3 + IDCT 15.3 (all cores) + paint 6 to 8 = 37 to 39 ms, over 33.3 ms. The decoder must pipeline (decode-ahead threads, D8); per-frame zlib chunks let inflate run in parallel too.
 
 ## P1 segmentation
+
+### P1.1 full search reference (sandbox, Nov 10; Mac timings come with P1.3)
+One frame pair per clip, Y plane, padded frame. "At range edge" = share of blocks whose best vector has |dx| or |dy| equal to R, a sign the true motion is outside the window. Time is the second run (after JIT warm-up), single thread, early exit on SAD.
+
+| Clip, frame | R | Blocks | ms/frame | Mean MAD | At range edge | Most common vectors (dx,dy = count) |
+|---|---|---|---|---|---|---|
+| video2, 100 | 16 | 1590 | 67 | 5.76 | 29.3% | -16,-3 = 168; -14,-3 = 125; -14,-2 = 87 |
+| video2, 100 | 32 | 1590 | 212 | 4.08 | 2.2% | -14,-3 = 125; -14,-2 = 86; -16,-3 = 71 |
+| SAL, 200 | 16 | 8160 | 382 | 3.08 | 3.3% | 7,0 = 3048; 6,0 = 1069; 8,0 = 810 |
+| Stairs, 170 | 16 | 8160 | 328 | 3.36 | 1.2% | -6,0 = 918; -5,0 = 905; -6,1 = 345 |
+| video1, 250 | 16 | 1590 | 61 | 1.84 | 10.1% | 0,0 = 253; 6,1 = 171; 5,1 = 75 |
+
+Reading: SAL's camera pans 6 to 8 px per frame and Stairs 5 to 6 px, matching doc 05. video2 at R=16 has 29% of blocks pinned at the window edge; at R=32 that drops to 2.2% and mean MAD falls from 5.76 to 4.08, so +/-32 is needed there (D2). Early exit makes full search about 3x faster than the P0 speed gate estimate (1.24 s), but it is still the reference, not the default.
+
 | Clip | ME ms/frame full | ME ms/frame hier | Agreement within 1 px | Camera model mix | Mean inlier ratio | Mean foreground % | Regions/frame |
 |---|---|---|---|---|---|---|---|
