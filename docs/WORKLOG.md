@@ -29,3 +29,11 @@ The VM reaches GitHub but not Maven Central or services.gradle.org.
 3. `unset JAVA_TOOL_OPTIONS`. Main code compiles offline (`gradle jar --offline`). Tests: javac main + test against `build-tools/junit-platform-console-standalone-1.11.4.jar` (made on the Mac by `./gradlew vendorJunit`), run the console launcher with `--scan-classpath`.
 4. Sandbox `sed -i` drops the executable bit on launchers; re-run `chmod +x myencoder mydecoder` if touched.
 5. Timings and playback count only on the Mac.
+
+## 2026-11-10, Window A (P1, fresh chat)
+- Sandbox rebuilt from the recipe; baseline 32/32. Test runner: javac main with -Xlint:all -Werror into a scratch dir (Mac `build/` untouched), console launcher `--scan-classpath`.
+- Git deletion approved for this chat, so commits no longer leave .lock files.
+- P1.1 done: `MotionEstimator.fullSearch` (SAD on Y, clamped window, tie-break P1-D1, early exit P1-D3), `Config.Motion`. 39/39 tests including an oracle comparison. Real clips (sandbox): SAL pan 6 to 8 px, Stairs 5 to 6 px, video2 needs R=32 (29% of blocks at the R=16 edge). RESULTS P1.1. Commit 03d33a1.
+- Prototype files moved to `docs/img/naive_probe_overlay.jpg` and `tools/prototype/probe_motion.py` (P0-D5 updated). Commit dcab1a9.
+- Explain-back pending: Dhruvin's P1.1 prediction (which blocks recover (-7,2) exactly; flat frame result).
+- Next: P1.2 VizSeg v1 (overlay PNGs, arrows, stats CSV, overlay mp4).
