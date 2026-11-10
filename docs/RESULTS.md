@@ -32,13 +32,15 @@ Upright check: `docs/img/p0_upright_thumbnails.jpg` (frame 0 of each clip; Stair
 
 Per-frame cost for SAL with P0-D8 (Mac): decode 5.5 to 5.6 ms, pack+scale 1.6 ms, paint 5.8 to 8.1 ms, total about 13 to 15 ms of the 33.3 ms budget.
 
-## P0 speed gate
-| Test | Result | Target |
-|---|---|---|
-| Display 300 frames 1080p at 30 fps, late frames | | < 2% |
-| 16x16 SAD | | ns per SAD |
-| 8x8 IDCT, one 1080p frame x 3 channels, 1 thread / all cores | | < 25 ms all cores |
-| Inflate 12.5 MB | | |
+## P0 speed gate (SpeedGate on SAL frames 100 to 129, after JIT warm-up)
+| Test | Mac (8 cores) | Sandbox (4 cores) | Target | Verdict |
+|---|---|---|---|---|
+| (a) Display 300 x 1080p at 30 fps, late frames | 2 (0.7%) | no screen | < 2% | PASS |
+| (b) 16x16 SAD, random positions | 139.6 ns | 166.1 ns | report | full search +/-16 would be 1.24 s per 1080p frame, +/-32 4.8 s: hierarchical search is required (D2) |
+| (c) Naive separable 8x8 IDCT, 1920x1088 x 3 channels (97,920 blocks) | 77.2 ms 1 thread, 15.3 ms all cores | 87.2 / 21.8 ms | < 25 ms all cores | PASS |
+| (d) One frame in D7 layout, zlib level 1 (fake labels, n1=2, n2=5) | 12.57 MB to 1.22 MB (10.3x); deflate 30.4 ms, inflate 15.3 ms | 1.27 MB (9.9x); 46.6 / 15.3 ms | report | zlib is cheap; ratio beats the 7x estimate in Project doc 05 |
+
+Decoder budget at 1080p, serial: inflate 15.3 + IDCT 15.3 (all cores) + paint 6 to 8 = 37 to 39 ms, over 33.3 ms. The decoder must pipeline (decode-ahead threads, D8); per-frame zlib chunks let inflate run in parallel too.
 
 ## P1 segmentation
 | Clip | ME ms/frame full | ME ms/frame hier | Agreement within 1 px | Camera model mix | Mean inlier ratio | Mean foreground % | Regions/frame |
