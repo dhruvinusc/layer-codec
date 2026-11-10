@@ -16,7 +16,11 @@ Running handoff between build windows. Newest entry at the bottom.
 - Mac play test: video2 12.74 s / 12.77 s, 0 to 1% late (pass). SAL 20.83 s, 100% late: about 48 ms per frame. Cause: Java2D rescaling an unmanaged image in software each frame. Fix P0-D8: own bilinear scaler (1.8 ms sandbox) and 1:1 draw; per-stage timing added to the play report. 32 tests.
 - P0.7 proven on the Mac: SAL 14.55 s / 14.57 s, 0.5 to 1.4% late; per frame decode 5.5, scale 1.6, paint 6 to 8 ms.
 - P0.8 done on the Mac: display 0.7% late, SAD 139.6 ns, IDCT 15.3 ms all cores, zlib 10.3x with 15.3 ms inflate. All targets pass. Serial 1080p decode would be 37 to 39 ms, so P3 must pipeline.
-- P0 closed except: Types.java approval (DECISION REQUEST pending) and Dhruvin's explain-backs.
+- P0 closed except Dhruvin's explain-backs.
+
+## 2026-11-10, Window A
+- Types.java APPROVED by Dhruvin (P0-D9). P0 closed. Next: P1.1 full-search motion estimation, in a fresh Window A chat (this one is long).
+- Parallel: Window B (P2) can start once PM writes its handoff; it uses fake checkerboard labels and must not touch P1 files or EncoderMain.
 
 ### Sandbox setup recipe for the next window (the Linux VM is per chat and starts empty)
 The VM reaches GitHub but not Maven Central or services.gradle.org.
