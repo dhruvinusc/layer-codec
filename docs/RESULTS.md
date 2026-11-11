@@ -59,3 +59,21 @@ Reading: SAL's camera pans 6 to 8 px per frame and Stairs 5 to 6 px, matching do
 
 | Clip | ME ms/frame full | ME ms/frame hier | Agreement within 1 px | Camera model mix | Mean inlier ratio | Mean foreground % | Regions/frame |
 |---|---|---|---|---|---|---|---|
+
+## P2 compression (Window B)
+
+### P2.6 CodecHarness first real-clip runs (sandbox, Nov 11; correctness only, timings NOT authoritative, Mac numbers come in P2.9)
+Fake checkerboard labels (half the macroblocks foreground) unless noted. PSNR is the mean of per-frame PSNR over R, G, B.
+
+| Clip, frames | n1, n2 | Stored MB/frame (zlib) | Ratio vs raw | PSNR all / fg / bg (dB) |
+|---|---|---|---|---|
+| video2, 20 | 0, 0 | 1.07 | 2.30x | 59.19 / 59.19 / 59.18 |
+| video2, 20 | 2, 5 | 0.46 | 5.35x | 35.53 / 47.47 / 32.67 |
+| video2, 20 | 5, 2 | 0.46 | 5.36x | 35.55 / 32.68 / 47.47 |
+| SAL, 6 | 0, 0 | 4.91 | 2.56x | 59.00 / 58.99 / 59.00 |
+| SAL, 6 | 1, 7 | 2.24 | 5.62x | 29.82 / 52.23 / 26.82 |
+
+- n = 0 loses only rounding (59 dB, H2 target >= 45). Swapping n1 and n2 swaps the fg/bg PSNR almost exactly (47.47 / 32.67 vs 32.68 / 47.47): early D5 evidence.
+- zlib ratio depends on the foreground share. SAL (2,5), 3 frames: all-fg 4.39x, checker 6.31x, all-bg 13.16x. The P0 speed gate's 10.3x used 1 in 7 blocks foreground, which fits between these; no contradiction.
+- Images: `docs/img/p2_SAL_n1_7_checker_crop1to1.png` (1:1, original | decoded: alternate macroblocks smeared at n=7, sharp at n=1), `docs/img/p2_video2_n2_5_checker_crop1to1.png`, `docs/img/p2_video2_n5_2_checker_crop1to1.png`. At half scale the difference is barely visible, which supports the 1:1 zoom in D8.
+- Determinism: the synthetic end-to-end test runs the harness twice and checks equal SHA-256 (`CodecHarnessTest`).
