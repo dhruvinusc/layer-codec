@@ -50,3 +50,5 @@ The VM reaches GitHub but not Maven Central or services.gradle.org.
   7. P2.9 Mac measurements on video2 (120 f) and SAL (60 f) for (0,0) (2,5) (5,2) (1,7) (4,4).
   8. Codec constants (zlib level, magic, version) stay as named constants in my own classes, so frozen Config is not touched.
 - [B/P2] Next: P2.1 Dct.
+- [B/P2] 2026-11-11 P2.1 done: `codec/common/Dct.java` (forward, inverse, inverseZeroSkip; caller scratch, no allocation, no mutable state). `DctTest` 8 tests: textbook oracle on 200 random blocks within 1e-9; round trip within 1e-9; flat 200 gives DC 576 and AC 0; flat v gives DC 8(v-128); black -1024 / white 1016 (int16 safe); single cosine lands at index 3 (Parseval bound 4 after pixel rounding); offset read inside a larger plane; zero-skip bit-identical. 47/47 green (sandbox). DECISIONS P2-D1..D3.
+- [B/P2] Next: P2.2 Quant.
