@@ -24,15 +24,15 @@ Due Wed Dec 2, 2026.
 - [ ] B11 Visual demarcation like the brief's figure (green background, red/blue foreground)
 
 ## C. Part 2: Compression (encoder)
-- [ ] C1 Frame split into 8x8 blocks; each inherits its 16x16 macroblock's label
-- [ ] C2 8x8 DCT on all three channels (R, G, B)
-- [ ] C3 Uniform quantization, every table entry 2^n (n1 foreground, n2 background)
-- [ ] C4 Blocks written in scan line order
-- [ ] C5 File holds n1, n2, then per block: block_type + 64 coefficients x 3 channels
-- [ ] C6 Baseline without zigzag, intermediary representation, or entropy coding is acceptable
+- [ ] C1 Frame split into 8x8 blocks; each inherits its 16x16 macroblock's label (partial [B/P2]: CmpFormat.blockTypes, CmpFormatTest.blockTypeOf8x8IsItsMacroblockLabel; final check after wire-up)
+- [ ] C2 8x8 DCT on all three channels (R, G, B) (partial [B/P2]: Dct, DctTest.matchesTextbookOracleOnRandomBlocks; per-channel use in CodecHarness P2.6)
+- [ ] C3 Uniform quantization, every table entry 2^n (n1 foreground, n2 background) (partial [B/P2]: Quant, QuantTest.errorIsAtMostHalfAStepAndGrowsWithN; n by block_type in P2.5/P2.6)
+- [ ] C4 Blocks written in scan line order (partial [B/P2]: CmpFormatTest.blocksAreInScanLineOrder385BytesEach; real frames in P2.6)
+- [ ] C5 File holds n1, n2, then per block: block_type + 64 coefficients x 3 channels (partial [B/P2]: CmpFormat v1, CmpFormatTest.headerIs48BytesWithPatchedCountsAndZeroReserved, threeFramesRoundTripIdenticallyWithAndWithoutZlib)
+- [ ] C6 Baseline without zigzag, intermediary representation, or entropy coding is acceptable (partial [B/P2]: coefficients stored row-major, no zigzag, P2-D1; zlib is lossless byte packing, 03 D7)
 
 ## D. Part 3: Decoder
-- [ ] D1 Parses n1, n2, block types, coefficients
+- [ ] D1 Parses n1, n2, block types, coefficients (partial [B/P2]: CmpFormat.Reader + validation tests rule*)
 - [ ] D2 Dequantizes each block with n1 or n2 by block_type
 - [ ] D3 Inverse DCT, reconstruct, display
 - [ ] D4 Plays at the ORIGINAL frame rate
