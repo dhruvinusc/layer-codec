@@ -54,3 +54,5 @@ The VM reaches GitHub but not Maven Central or services.gradle.org.
 - [B/P2] Next: P2.2 Quant.
 - [B/P2] 2026-11-11 P2.2 done: `codec/common/Quant.java` (step, quantize, dequantize, block versions, toPixel; n range 0..10 enforced). `QuantTest` 8 tests: lesson examples at n=3 (13->2->16, -12->-2->-16, 3->0, 576->72->576, 5->1, 2->0); symmetric halves; error <= step/2 and mean grows with n; rounding ~half of truncation error; int16 overflow caught; bad n rejected; toPixel clamp; full block round trip at n=0 >= 45 dB. Sandbox probe on 500 random-noise blocks (worst case, no energy compaction): n=0 58.95 dB max err 1; n=2 46.63 dB; n=5 28.97 dB. 55/55 green. DECISIONS P2-D4.
 - [B/P2] Next: P2.3 CmpFormat byte table, needs Dhruvin's yes before freezing.
+- [B/P2] 2026-11-11 P2.4 done: `codec/common/Zio.java`. `ZioTest` 6 tests: random bytes round trip, empty input (caught a real loop bug, fixed), quantized gradient coefficients compress > 5x and round trip, truncated / wrong length / garbage all throw. 61/61 green (sandbox). DECISIONS P2-D5.
+- [B/P2] Next: P2.3 CmpFormat exactly to 03 D7 (frozen v1), one test per validation rule.
