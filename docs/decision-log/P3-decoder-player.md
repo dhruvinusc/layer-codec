@@ -59,3 +59,18 @@ Owner: Window C. Oldest first. Matching technical entries: repo docs/DECISIONS.m
 - Cost or limitation: Measures decoding only, not painting; real playback is measured in P3.3.
 - Say it in the presentation: "Before building the player, we measured the decoder alone: 47.7 fps at the worst setting."
 - Likely professor question: Does `--bench` change normal behavior? / Answer: No. It only runs when the flag is given, and `mydecoder input.cmp` works exactly as the brief specifies.
+
+### P3-L5: Six decode workers by default
+- Date / window: Nov 12, Window C
+- Brief says: Play at the original frame rate (D4). Worker count is not mentioned.
+- The problem in plain words: More workers decode faster, but the Mac has 8 cores and the display and system also need some. Too many workers just fight over the same cores.
+- Options we considered:
+  1. 4 workers : good as fast as 6 at (2,5), leaves more room for the display / bad 17% slower at n = 0, the worst case
+  2. 6 workers (cores minus 2) : good fastest at n = 0, still leaves 2 cores for display and system / bad no gain at typical settings
+  3. 8 workers (all cores) : good maximum decode power / bad the display thread would compete and frames could be painted late
+- What we chose: max(2, cores minus 2), which is 6 on the Mac. `--bench --workers` can test any other count.
+- Why (plain words): The default must survive the worst case, and n = 0 is where every millisecond counts. At typical settings 6 is no slower than 4, so it costs nothing there.
+- Proof: RESULTS P3.1 (Mac, SAL 1080p, ms per frame): n = 0: 1 worker 72.1, 4 workers 24.6, 6 workers 21.0 (47.7 fps). (2,5): 1 worker 53.9, 4 workers 16.5, 6 workers 17.0.
+- Cost or limitation: Speed flattens after 4 workers. The MacBook Air likely has 4 performance and 4 efficiency (slower, power-saving) cores, and all workers share the same memory bandwidth (each 1080p frame is about 25 MB). Late-frame counts with the real player (P3.3) and long runs on a fanless laptop (P3.7) may still favor 4; we will re-check there.
+- Say it in the presentation: "Six workers is the fastest setting at the hardest quality level, and going past four mostly hits the limits of the laptop's slower cores and memory."
+- Likely professor question: Why not use all 8 cores? / Answer: The display thread must paint a frame every 33 ms and the system needs a core too. Our measurements show 4 to 6 workers already exceed real time, so taking the last two cores would only risk late paints.
