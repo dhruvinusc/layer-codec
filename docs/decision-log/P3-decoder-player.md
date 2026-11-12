@@ -90,3 +90,18 @@ Owner: Window C. Oldest first. Matching technical entries: repo docs/DECISIONS.m
 - Cost or limitation: Each step back past the ring restarts the decode window, which decodes up to 8 frames to use one. Fine for occasional long jumps; we will check how it feels in the player (P3.3).
 - Say it in the presentation: "The last second of video is kept in memory, so stepping back is instant; further back, we jump straight to that frame in the file using the frame table."
 - Likely professor question: How does step back work beyond the cache? / Answer: The file's footer lists where every frame starts, so the decoder reads just that frame and decodes it. It never rereads the file from the beginning.
+
+### P3-L7: What the player does when a frame is late
+- Date / window: Nov 12, Window C
+- Brief says: The decoder plays at the ORIGINAL frame rate (D4), with play, pause and step (E2).
+- The problem in plain words: Sometimes a frame is not ready by its deadline (a slow frame, the laptop busy). The player must decide whether to wait, slow down, or skip.
+- Options we considered:
+  1. Wait for every frame and slow the video down : good never skips a picture / bad the clip plays longer than it really is, which breaks "original frame rate"
+  2. Sleep a fixed 33 ms after each frame : good simple / bad every small delay adds up, so the video drifts later and later
+  3. Deadlines from the frame number, and when behind, jump to the newest frame that is already due : good keeps true speed, never drifts / bad an occasional skipped picture
+- What we chose: Option 3. Frame i is due at start time + i x 33.3 ms. If the player falls behind, it skips straight to the frame that should be on screen now and counts the skipped ones as "dropped". A frame painted more than half a frame (16.7 ms) after its deadline counts as "late". After a pause the clock restarts, so a pause is never counted as falling behind.
+- Why (plain words): Viewers notice a clip running slow more than one missing frame, and the brief asks for the original rate. Counting drops and late frames on screen and in the report makes the cost visible instead of hidden.
+- Proof: PlayerTest (5 tests on a fake clock): with 2 ms decoding all 90 frames play on time (3.00 s); with 50 ms decoding about a third are dropped but the 120-frame clip still takes 4.0 s; a 10-second pause causes no drops. Mac numbers: RESULTS P3.3.
+- Cost or limitation: If decoding were always slower than 33 ms, the video would look choppy (but still on time). Our pipeline decodes faster than that (RESULTS P3.1), so drops should be rare.
+- Say it in the presentation: "The player never slows the video down: if a frame is late it skips ahead to the right one and counts it, so you can see exactly how often that happens."
+- Likely professor question: Why drop a frame instead of slowing down? / Answer: The brief asks for the original frame rate, and a slowed clip misrepresents the video. Dropping keeps time correct, and our counter shows it almost never happens.

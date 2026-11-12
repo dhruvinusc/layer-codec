@@ -1,7 +1,10 @@
 package codec.common;
 
 import codec.common.Types.Frame;
+import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.GraphicsEnvironment;
 import java.awt.Rectangle;
@@ -109,6 +112,28 @@ public final class Display implements AutoCloseable {
         Toolkit.getDefaultToolkit().sync();
         lastLoadNanos = t1 - t0;
         lastPaintNanos = System.nanoTime() - t1;
+    }
+
+    /**
+     * Shows a frame already packed as 0xRRGGBB (the decoder's cache format, P3.2) and blocks until
+     * it is painted. Same scaler and paint path as {@link #show(Frame)}.
+     */
+    public void show(int[] rgb, int w, int h) {
+        if (w != width || h != height || rgb.length != w * h) {
+            throw new IllegalArgumentException("frame size does not match the window");
+        }
+        long t0 = System.nanoTime();
+        canvas.loadPacked(rgb);
+        long t1 = System.nanoTime();
+        onEdt(() -> canvas.paintImmediately(0, 0, canvas.getWidth(), canvas.getHeight()));
+        Toolkit.getDefaultToolkit().sync();
+        lastLoadNanos = t1 - t0;
+        lastPaintNanos = System.nanoTime() - t1;
+    }
+
+    /** One line of text drawn over the top-left corner of the picture (null: none). */
+    public void setStatus(String text) {
+        canvas.status = text;
     }
 
     /** Time the last {@link #show} spent packing (and scaling) pixels. */
@@ -237,6 +262,40 @@ public final class Display implements AutoCloseable {
             }
         }
 
+        /** Same resampling as {@link #apply}, from packed 0xRRGGBB input (bit-identical, tested). */
+        void applyPacked(int[] src, int[] out) {
+            if (dw == w && dh == h) {
+                System.arraycopy(src, 0, out, 0, out.length);
+                return;
+            }
+            IntStream.range(0, dh).parallel().forEach(y -> rowPacked(src, out, y));
+        }
+
+        private void rowPacked(int[] src, int[] out, int y) {
+            int top = y0[y] * w;
+            int bot = y1[y] * w;
+            int vy = wy[y];
+            int uy = 256 - vy;
+            int o = y * dw;
+            for (int x = 0; x < dw; x++) {
+                int a = src[top + x0[x]];
+                int c = src[top + x1[x]];
+                int d = src[bot + x0[x]];
+                int e = src[bot + x1[x]];
+                int vx = wx[x];
+                int ux = 256 - vx;
+                out[o + x] = (mixPacked(a, c, d, e, 16, ux, vx, uy, vy) << 16)
+                        | (mixPacked(a, c, d, e, 8, ux, vx, uy, vy) << 8)
+                        | mixPacked(a, c, d, e, 0, ux, vx, uy, vy);
+            }
+        }
+
+        private static int mixPacked(int a, int c, int d, int e, int shift, int ux, int vx, int uy, int vy) {
+            int t = ((a >>> shift) & 0xFF) * ux + ((c >>> shift) & 0xFF) * vx;
+            int u = ((d >>> shift) & 0xFF) * ux + ((e >>> shift) & 0xFF) * vx;
+            return (t * uy + u * vy + 32768) >> 16;
+        }
+
         private static int mix(int[] p, int a, int c, int d, int e, int ux, int vx, int uy, int vy) {
             int t = p[a] * ux + p[c] * vx;
             int u = p[d] * ux + p[e] * vx;
@@ -251,6 +310,8 @@ public final class Display implements AutoCloseable {
         private final transient BufferedImage image;
         private final transient int[] pixels;
         private final transient Object lock = new Object();
+        /** Status line, written by the player thread, read on the event thread. */
+        transient volatile String status;
 
         Canvas(Scaler scaler) {
             this.scaler = scaler;
@@ -266,11 +327,32 @@ public final class Display implements AutoCloseable {
             }
         }
 
+        void loadPacked(int[] rgb) {
+            synchronized (lock) {
+                scaler.applyPacked(rgb, pixels);
+            }
+        }
+
         @Override
         protected void paintComponent(Graphics g) {
             synchronized (lock) {
                 g.drawImage(image, 0, 0, null);
             }
+            String s = status;
+            if (s != null) {
+                drawStatus(g, s);
+            }
+        }
+
+        /** White text on a translucent black bar, so it reads over any picture. */
+        private static void drawStatus(Graphics g, String s) {
+            g.setFont(new Font(Font.MONOSPACED, Font.BOLD, 13));
+            FontMetrics fm = g.getFontMetrics();
+            int pad = 6;
+            g.setColor(new Color(0, 0, 0, 170));
+            g.fillRect(8, 8, fm.stringWidth(s) + 2 * pad, fm.getHeight() + pad);
+            g.setColor(Color.WHITE);
+            g.drawString(s, 8 + pad, 8 + pad / 2 + fm.getAscent());
         }
     }
 }

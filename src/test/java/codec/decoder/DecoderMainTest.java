@@ -48,4 +48,21 @@ class DecoderMainTest {
         assertThrows(IllegalArgumentException.class,
                 () -> DecoderMain.parseBench(new String[] {cmp.toString(), "--bench", "extra"}));
     }
+
+    @Test
+    void hiddenWorkersOptionParsed() throws IOException {
+        Path cmp = Files.createFile(dir.resolve("w.cmp"));
+        Path mp4 = Files.createFile(dir.resolve("w.mp4"));
+        assertEquals(0, DecoderMain.parse(new String[] {cmp.toString()}).workers());
+        DecoderMain.Args a = DecoderMain.parse(new String[] {cmp.toString(), "--workers", "4"});
+        assertEquals(4, a.workers());
+        assertNull(a.original());
+        DecoderMain.Args b = DecoderMain.parse(new String[] {cmp.toString(), mp4.toString(), "--workers", "6"});
+        assertEquals(mp4, b.original());
+        assertEquals(6, b.workers());
+        assertThrows(IllegalArgumentException.class,
+                () -> DecoderMain.parse(new String[] {cmp.toString(), "--workers", "0"}));
+        assertThrows(IllegalArgumentException.class,
+                () -> DecoderMain.parse(new String[] {cmp.toString(), mp4.toString(), mp4.toString()}));
+    }
 }

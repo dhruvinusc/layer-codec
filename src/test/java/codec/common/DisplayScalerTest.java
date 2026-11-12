@@ -51,4 +51,26 @@ class DisplayScalerTest {
         assertEquals(50, red(out[0]));
         assertEquals(225, red(out[1]));
     }
+
+    @Test
+    void packedInputScalesBitIdenticalToPlanes() {
+        java.util.Random rnd = new java.util.Random(13);
+        Frame f = Frame.allocate(64, 36);
+        int[] packed = new int[64 * 36];
+        for (int i = 0; i < packed.length; i++) {
+            f.r()[i] = rnd.nextInt(256);
+            f.g()[i] = rnd.nextInt(256);
+            f.b()[i] = rnd.nextInt(256);
+            packed[i] = (f.r()[i] << 16) | (f.g()[i] << 8) | f.b()[i];
+        }
+        int[][] sizes = {{64, 36}, {46, 26}, {33, 19}};
+        for (int[] d : sizes) {
+            Display.Scaler s = new Display.Scaler(64, 36, d[0], d[1]);
+            int[] a = new int[d[0] * d[1]];
+            int[] b = new int[d[0] * d[1]];
+            s.apply(f, a);
+            s.applyPacked(packed, b);
+            org.junit.jupiter.api.Assertions.assertArrayEquals(a, b, "size " + d[0] + "x" + d[1]);
+        }
+    }
 }

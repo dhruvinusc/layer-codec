@@ -1,6 +1,7 @@
 package codec.decoder;
 
 import codec.common.CmpFormat;
+import codec.common.Display;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -17,17 +18,23 @@ import java.util.List;
  * {@code mydecoder input.cmp --bench [--workers 1,2,6]} decodes every frame headless, first
  * serially on one core, then through {@link DecodePipeline}, and prints ms/frame and fps.
  *
- * <p>Playback arrives in P3.3; until then a plain run validates the arguments and prints them.
+ * <p>A plain run plays the file (P3.3): decode-ahead pipeline, 30-frame step-back cache, steady
+ * clock with frame dropping, status line on screen, timing report on stdout. Hidden option
+ * {@code --workers N} overrides the decode worker count (4 vs 6 comparison, P3-L5).
  */
 public final class DecoderMain {
 
     static final String USAGE = String.join("\n",
             "usage: mydecoder input_video.cmp [original_video.mp4]",
             "  plays the decoded video at its original frame rate",
-            "  optional original_video.mp4 enables side-by-side comparison");
+            "  optional original_video.mp4 enables side-by-side comparison",
+            "  keys: space play/pause, right step, left step back, q quit");
 
-    /** A validated command line. {@code original} is null when side-by-side is not requested. */
-    record Args(Path cmp, Path original) {}
+    /**
+     * A validated command line. {@code original} is null when side-by-side is not requested;
+     * {@code workers} is 0 for the default.
+     */
+    record Args(Path cmp, Path original, int workers) {}
 
     private DecoderMain() {
     }
@@ -63,18 +70,88 @@ public final class DecoderMain {
             System.exit(2);
             return;
         }
-        System.out.printf("cmp      : %s%n", args.cmp());
-        System.out.printf("original : %s%n", args.original() == null ? "(none)" : args.original());
-        System.out.println("stub: decoding and playback (P3) not implemented yet");
+        int code = 0;
+        try {
+            play(args);
+        } catch (IOException e) {
+            System.err.println("error: " + e.getMessage());
+            code = 1;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            code = 1;
+        } catch (IllegalStateException e) {
+            System.err.println("error: " + e.getMessage());
+            code = 1;
+        }
+        // Pipeline threads are joined and the window disposed by now; exit so no AWT thread lingers.
+        System.exit(code);
+    }
+
+    /** Opens the file, plays it, and tears everything down in reverse order. */
+    static void play(Args a) throws IOException, InterruptedException {
+        try (CmpFormat.Reader r = new CmpFormat.Reader(a.cmp())) {
+            CmpFormat.Header h = r.header();
+            int workers = a.workers() > 0 ? a.workers() : DecodePipeline.defaultWorkers();
+            int cap = DecodePipeline.defaultCapacity(h, workers);
+            String name = a.cmp().getFileName().toString();
+            System.out.printf("file     : %s  %dx%d  n1=%d n2=%d  frames=%d  fps=%d/%d%n", name, h.width(),
+                    h.height(), h.n1(), h.n2(), r.frameCount(), h.fpsNum(), h.fpsDen());
+            System.out.printf("decode   : %d workers, window %d frames, step-back cache %d frames (%.0f MB)%n",
+                    workers, cap, FrameCache.DEFAULT_CAPACITY,
+                    FrameCache.bytesFor(h, FrameCache.DEFAULT_CAPACITY) / 1e6);
+            if (a.original() != null) {
+                System.out.println("note     : side by side with the original arrives in P3.4; ignoring " + a.original());
+            }
+            System.out.println("keys     : space play/pause, right step, left step back, q quit");
+            try (DecodePipeline p = new DecodePipeline(r, workers, cap)) {
+                FrameCache cache = new FrameCache(p);
+                Display d = new Display("mydecoder  " + name, h.width(), h.height());
+                try {
+                    new Player(h, r.frameCount(), cache::get, screen(d), System::nanoTime, System.out,
+                            name + " (" + workers + " workers)").run();
+                } finally {
+                    d.close();
+                }
+            }
+        }
+    }
+
+    /** Adapts the Swing display to the player's screen interface. */
+    private static Player.Screen screen(Display d) {
+        return new Player.Screen() {
+            @Override
+            public void show(FrameCache.Entry e, String status) {
+                d.setStatus(status);
+                d.show(e.rgb(), e.width(), e.height());
+            }
+
+            @Override
+            public Display.Key waitKey(long nanos) {
+                return nanos <= 0 ? d.pollKey() : d.waitKey(nanos);
+            }
+        };
     }
 
     static Args parse(String[] argv) {
-        if (argv.length < 1 || argv.length > 2) {
-            throw new IllegalArgumentException("expected 1 or 2 arguments, got " + argv.length);
+        if (argv.length < 1) {
+            throw new IllegalArgumentException("expected 1 or 2 arguments, got 0");
         }
         Path cmp = requireFile(argv[0]);
-        Path original = argv.length == 2 ? requireFile(argv[1]) : null;
-        return new Args(cmp, original);
+        Path original = null;
+        int workers = 0;
+        for (int i = 1; i < argv.length; i++) {
+            if (argv[i].equals("--workers") && i + 1 < argv.length) {
+                workers = Integer.parseInt(argv[++i]);
+                if (workers < 1) {
+                    throw new IllegalArgumentException("workers must be >= 1, got " + workers);
+                }
+            } else if (original == null && !argv[i].startsWith("--")) {
+                original = requireFile(argv[i]);
+            } else {
+                throw new IllegalArgumentException("unexpected argument " + argv[i]);
+            }
+        }
+        return new Args(cmp, original, workers);
     }
 
     static Bench parseBench(String[] argv) {
