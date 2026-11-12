@@ -86,3 +86,4 @@ The VM reaches GitHub but not Maven Central or services.gradle.org.
 - [C/P3] Sandbox bench (4 cores, NOT authoritative): SAL n=0 serial 171 ms/frame; pipeline 1/2/4 workers = 132 / 51 / 33 ms/frame. Scaling works; Mac numbers pending (command in chat).
 - [C/P3] Explain-back P3.1: Dhruvin's predictions right on ordering; throughput estimate corrected (45.6 ms was 8-core, single-core ~78 ms at n=0). His check led to P3-D1.
 - [C/P3] Next: Mac bench, then P3.2 FrameCache.
+- [C/P3] 2026-11-12 Mac bench recorded (RESULTS P3.1): SAL n=0 serial 71.9 ms; 6 workers 21.0 ms/frame = 47.7 fps (1.59x real time); (2,5) 4 workers 16.5 ms = 60.7 fps; scaling flattens past 4 workers. Default 6 kept.

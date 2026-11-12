@@ -106,3 +106,20 @@ What the numbers say
 - Decoder budget (03 D8): one 1080p frame decodes in 27 to 32 ms at typical settings but 45.6 ms at n = 0, against 33.3 ms at 30 fps, before painting. Single-frame decoding cannot hold real time in the worst case: P3 must decode several frames ahead in parallel (frame-level parallelism also parallelizes inflate).
 - Encode budget: worst case SAL n=0 at 136.7 ms/frame is about 60 s for all 437 frames, plus segmentation. Comfortably inside the 10-minute limit.
 - Images (Mac run, frame 30 of SAL, 1:1, original | decoded): `docs/img/p29_SAL_n0_0_crop1to1.png`, `p29_SAL_n2_5_crop1to1.png`, `p29_SAL_n5_2_crop1to1.png`, `p29_SAL_n1_7_crop1to1.png`, `p29_SAL_n4_4_crop1to1.png`; video2 side by side `docs/img/p29_video2_n2_5_half.png`.
+
+## P3 decoder (Window C)
+
+### P3.1 DecodePipeline bench (Mac, Nov 12, 8 cores, JDK 21, `./mydecoder <cmp> --bench --workers 1,2,4,6`)
+Test files from CodecHarness (fake checkerboard labels), SAL first 60 frames, 1920x1080. Serial = one core, `DecodeCore.decode`, 30 frames after a warm-up pass. Pipeline = full 60 frames, consumer pulls as fast as it can (no display).
+
+| File | Serial 1 core | 1 worker | 2 workers | 4 workers | 6 workers (default) |
+|---|---|---|---|---|---|
+| SAL (0,0), worst case | 71.9 ms | 72.1 ms, 13.9 fps | 41.0 ms, 24.4 fps | 24.6 ms, 40.7 fps | 21.0 ms, 47.7 fps (1.59x real time) |
+| SAL (2,5) | 54.1 ms | 53.9 ms, 18.6 fps | 31.4 ms, 31.9 fps | 16.5 ms, 60.7 fps | 17.0 ms, 58.9 fps (1.96x real time) |
+
+What the numbers say
+- Single-core n=0 decode is 71.9 ms, about 1.6x the 8-core 45.6 ms in P2.9: one frame alone is more than twice the 33.3 ms budget.
+- The pipeline turns that into 21.0 ms per frame at n=0 with 6 workers (47.7 fps), so the worst case holds 30 fps with 37% headroom; (2,5) runs at about 2x real time.
+- Scaling is near-linear to 4 workers (2.9x at n=0, 3.3x at (2,5)), then flattens: 6 workers add 17% at n=0 and nothing at (2,5). The Air likely has 4 performance and 4 efficiency cores, plus shared memory bandwidth (each 1080p frame is about 25 MB of int planes). Default stays max(2, cores-2) = 6 because it is best at n=0, the case that needs it.
+- Peak buffered stayed 1 to 6 (capacity 8): with no display the consumer drains as fast as workers produce. Real buffering is measured in P3.3 with the player.
+- Pipeline at 1 worker equals serial (72.1 vs 71.9 ms), so the pipeline adds no measurable overhead.
