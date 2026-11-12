@@ -69,6 +69,7 @@ public final class Player {
     private final long[] shownAt;
     private final boolean[] late;
     private final boolean[] dropped;
+    private final long[] waitedNanos;
     private int shown = -1;
     private boolean playing = true;
     private boolean interrupted;
@@ -97,6 +98,7 @@ public final class Player {
         this.shownAt = new long[frameCount];
         this.late = new boolean[frameCount];
         this.dropped = new boolean[frameCount];
+        this.waitedNanos = new long[frameCount];
     }
 
     long periodNanos() {
@@ -190,7 +192,9 @@ public final class Player {
         }
         long w0 = now.getAsLong();
         FrameCache.Entry e = source.get(target);
-        waitNanos += now.getAsLong() - w0;
+        long waited = now.getAsLong() - w0;
+        waitNanos += waited;
+        waitedNanos[target] = waited;
         long shownTime = show(target, e);
         long lateBy = shownTime - due(target);
         if (lateBy > periodNanos() / 2) {
@@ -255,6 +259,22 @@ public final class Player {
             shownAt[index] = t;
         }
         return t;
+    }
+
+    /**
+     * Per-frame timing as CSV (hidden {@code --trace}, P3.3 diagnosis): one row per frame of the
+     * first pass with its deadline and paint time relative to the clock start, how long the player
+     * waited for the decoder, and whether it was dropped or late. Shows whether lost time comes in
+     * a few long stalls (disk, memory clean-up) or many small ones (CPU).
+     */
+    void writeTrace(PrintStream csv) {
+        csv.println("frame,due_ms,shown_ms,wait_ms,dropped,late");
+        for (int i = 0; i < frameCount; i++) {
+            long d = due(i) - t0;
+            String shownMs = shownAt[i] > 0 ? String.format("%.2f", (shownAt[i] - t0) / 1e6) : "";
+            csv.printf("%d,%.2f,%s,%.2f,%d,%d%n", i, d / 1e6, shownMs, waitedNanos[i] / 1e6,
+                    dropped[i] ? 1 : 0, late[i] ? 1 : 0);
+        }
     }
 
     String status() {

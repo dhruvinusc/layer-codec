@@ -65,4 +65,13 @@ class DecoderMainTest {
         assertThrows(IllegalArgumentException.class,
                 () -> DecoderMain.parse(new String[] {cmp.toString(), mp4.toString(), mp4.toString()}));
     }
+
+    @Test
+    void hiddenTraceOptionParsed() throws IOException {
+        Path cmp = Files.createFile(dir.resolve("t.cmp"));
+        DecoderMain.Args a = DecoderMain.parse(new String[] {cmp.toString(), "--workers", "4", "--trace", "x.csv"});
+        assertEquals(Path.of("x.csv"), a.trace());
+        assertEquals(4, a.workers());
+        assertNull(DecoderMain.parse(new String[] {cmp.toString()}).trace());
+    }
 }

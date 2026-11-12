@@ -155,3 +155,11 @@ What the numbers say
 - 1080p: 4 workers beat 6 in all four SAL runs across runs 1 and 2 (late 8 to 12% vs 27 to 45%), with zero drops. The display scaler and paint share the 8 cores (4 of them efficiency cores) with the decode workers, so fewer workers leaves room to paint on time. Default changed to 4 (P3-D8).
 - 480p: video2 decodes in under 1 ms of waiting either way; its drops and late frames sit in the first 100 frames (warm-up), and the last 100 frames ran clean at 30 fps with 4 workers. Worker count does not matter at this size.
 - Limitation of these runs: the SAL files are only the first 60 frames, so all of SAL is warm-up. Steady-state 1080p late % (H3 target under 2%) needs a longer file: SAL first 200 frames at (2,5), generated on the Mac (run 3).
+
+### P3.3 Player, Mac run 3 (Nov 12): SAL first 200 frames (2,5), 361.7 MB
+| Workers | Order | Dropped | Late | Played vs clip | Mean wait | Frames 0..99 | Frames 100..199 |
+|---|---|---|---|---|---|---|---|
+| 4 | 1st, right after encoding the 362 MB file | 94 (47.0%) | 37 (18.5%) | 7.28 s vs 6.67 s (+9.2%) | 38.1 ms | 100 shown, 31 late, 29.8 fps | 6 shown, 94 dropped, 1.6 fps |
+| 6 | 2nd | 0 | 0 | 6.67 s vs 6.67 s (+0.08%) | 1.5 ms | 100 shown, 30.0 fps | 100 shown, 30.0 fps |
+
+Reading: the 4-worker run collapsed in its second half (a few very long waits: about 4 s of waiting over 106 paints, almost all in frames 100..199), while 6 workers on the same frames were perfect. The bench says 4 workers decode this file at about 60 fps, so this is a stall (disk, memory clean-up or CPU slowdown), not decode speed. Run order matches the earlier pattern: in every SAL pair so far, the FIRST run was the worse one, whatever its worker count. Runs 1 to 3 therefore do not compare 4 and 6 fairly. Run 4 (`out/p3/run4.sh`) cools down first, alternates 4,6,6,4 with pauses, and logs per-frame waits and Java memory clean-up (GC) pauses. The default stays 4 only provisionally (P3-D8) until run 4.

@@ -162,4 +162,19 @@ class PlayerTest {
         assertEquals(0, r.late());
         assertEquals(4.0, r.measuredSeconds(), 0.004);
     }
+
+    @Test
+    void traceHasOneRowPerFrameWithWaitsAndFlags() throws Exception {
+        World w = new World(50_000_000L);
+        Player p = w.player(30);
+        p.run();
+        ByteArrayOutputStream b = new ByteArrayOutputStream();
+        p.writeTrace(new PrintStream(b, true, StandardCharsets.UTF_8));
+        String[] lines = b.toString(StandardCharsets.UTF_8).split("\\R");
+        assertEquals("frame,due_ms,shown_ms,wait_ms,dropped,late", lines[0]);
+        assertEquals(31, lines.length);
+        assertTrue(lines[0 + 1].startsWith("0,0.00,"), lines[1]);
+        long droppedRows = java.util.Arrays.stream(lines).skip(1).filter(l -> l.endsWith(",1,0")).count();
+        assertTrue(droppedRows > 0, "slow decode must show dropped rows");
+    }
 }

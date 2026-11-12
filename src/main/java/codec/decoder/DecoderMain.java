@@ -3,6 +3,8 @@ package codec.decoder;
 import codec.common.CmpFormat;
 import codec.common.Display;
 import java.io.IOException;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -20,7 +22,8 @@ import java.util.List;
  *
  * <p>A plain run plays the file (P3.3): decode-ahead pipeline, 30-frame step-back cache, steady
  * clock with frame dropping, status line on screen, timing report on stdout. Hidden option
- * {@code --workers N} overrides the decode worker count (4 vs 6 comparison, P3-L5).
+ * {@code --workers N} overrides the decode worker count (4 vs 6 comparison, P3-L5), and hidden
+ * {@code --trace file.csv} writes per-frame timing for diagnosis.
  */
 public final class DecoderMain {
 
@@ -34,7 +37,7 @@ public final class DecoderMain {
      * A validated command line. {@code original} is null when side-by-side is not requested;
      * {@code workers} is 0 for the default.
      */
-    record Args(Path cmp, Path original, int workers) {}
+    record Args(Path cmp, Path original, int workers, Path trace) {}
 
     private DecoderMain() {
     }
@@ -107,8 +110,15 @@ public final class DecoderMain {
                 FrameCache cache = new FrameCache(p);
                 Display d = new Display("mydecoder  " + name, h.width(), h.height());
                 try {
-                    new Player(h, r.frameCount(), source(cache), screen(d), System::nanoTime, System.out,
-                            name + " (" + workers + " workers)").run();
+                    Player player = new Player(h, r.frameCount(), source(cache), screen(d), System::nanoTime,
+                            System.out, name + " (" + workers + " workers)");
+                    player.run();
+                    if (a.trace() != null) {
+                        try (PrintStream csv = new PrintStream(a.trace().toFile(), StandardCharsets.UTF_8)) {
+                            player.writeTrace(csv);
+                        }
+                        System.out.println("trace    : " + a.trace());
+                    }
                 } finally {
                     d.close();
                 }
@@ -154,8 +164,11 @@ public final class DecoderMain {
         Path cmp = requireFile(argv[0]);
         Path original = null;
         int workers = 0;
+        Path trace = null;
         for (int i = 1; i < argv.length; i++) {
-            if (argv[i].equals("--workers") && i + 1 < argv.length) {
+            if (argv[i].equals("--trace") && i + 1 < argv.length) {
+                trace = Path.of(argv[++i]);
+            } else if (argv[i].equals("--workers") && i + 1 < argv.length) {
                 workers = Integer.parseInt(argv[++i]);
                 if (workers < 1) {
                     throw new IllegalArgumentException("workers must be >= 1, got " + workers);
@@ -166,7 +179,7 @@ public final class DecoderMain {
                 throw new IllegalArgumentException("unexpected argument " + argv[i]);
             }
         }
-        return new Args(cmp, original, workers);
+        return new Args(cmp, original, workers, trace);
     }
 
     static Bench parseBench(String[] argv) {
