@@ -69,3 +69,16 @@ The VM reaches GitHub but not Maven Central or services.gradle.org.
 - [B/P2] Next: P2.9 Mac measurements (commands for Dhruvin).
 - [B/P2] 2026-11-11 P2.9 done on the Mac (`out/p29.sh`, output `out/p29.txt`; first attempt failed because zsh does not word-split variables, fixed with a bash script). RESULTS "P2.9 Mac measurements": 5 settings x 2 clips, plus 1-thread and raw. Key: fg/bg layer effect confirmed; n=0 59 dB; same SHA-256 on 1 and 8 threads; zlib 3x to 9.6x; inflate ~14 ms, deflate ~38 ms per 1080p frame; 1080p decode 45.6 ms at n=0 > 33.3 ms budget, so P3 must decode frames ahead in parallel. Images docs/img/p29_*.
 - [B/P2] Next: P2.X end-of-part report + explain-backs.
+
+## 2026-11-11, Window C (P3)
+- [C/P3] P3.0 sync: head a36bc0a, sandbox JDK 21.0.9 from the recipe (javac + vendored JUnit, no Gradle needed), 98/98 green, zero warnings.
+- [C/P3] Test .cmp files from CodecHarness (fake checkerboard labels) in `out/p3/` (git-ignored): video2 first 120 frames and SAL first 60 frames at (2,5), (5,2), (0,0), (1,7). PSNR matches Mac P2.9 (video2 (2,5) fg 48.14 / bg 34.39; SAL (2,5) fg 47.73 / bg 34.48). CmpDump headers checked: SAL 1920x1080 padded 1088, 30/1 fps, 60 frames. Short clips on purpose: Mac disk has about 14 GB free. Note: the harness writes `out/<clip>_p2.cmp`, so the old P2.9 copies there were overwritten, then moved into `out/p3/`.
+- [C/P3] APIs used: `CmpFormat.Reader(path)` (header(), frameCount(), payload(k): positional reads, inflates, safe from several threads); `DecodeCore.decode(header, raw, Scratch)` -> `Decoded(frame cropped to true size, types per 8x8 block)`, one Scratch per thread; `Display(title, w, h)` show(frame) blocks until painted, pollKey/waitKey, own bilinear scaler (P0-D8); `VideoIO.open(mp4)` streams upright frames for side by side.
+- [C/P3] Plan:
+  1. P3.1 DecodePipeline: pool of max(2, cores-2) workers, each with its own Scratch; reads payload(k) + decode; bounded index-ordered buffer (about 8 frames at 1080p, from heap); get(k) returns exactly frame k; seek(k) restarts the window; close() joins all threads.
+  2. Tests: hash identical to serial DecodeCore for every frame; order under random worker delays; buffer never exceeds capacity; seek backwards; no live threads after close.
+  3. P3.2 FrameCache: last ~30 shown frames for instant step back; beyond it, re-decode by footer offset.
+  4. P3.3 Player on Display: steady clock t0 + i*den/num, drop late frames, counters on screen, keys space/right/left/q; no decoding on the event thread.
+  5. P3.4 side by side + 1:1 zoom + pan; P3.5 overlay from block_type map; these need new keys (s, d, z, mouse) in Display, which Window C now owns.
+  6. P3.6 DecoderMain CLI, clear errors, hidden --bench; P3.7 Mac measurements (commands for Dhruvin).
+- [C/P3] Next: P3.1 DecodePipeline.
