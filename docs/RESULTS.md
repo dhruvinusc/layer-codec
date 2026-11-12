@@ -78,3 +78,31 @@ Fake checkerboard labels (half the macroblocks foreground) unless noted. PSNR is
 - zlib ratio depends on the foreground share. SAL (2,5), 3 frames: all-fg 4.39x, checker 6.31x, all-bg 13.16x. The P0 speed gate's 10.3x used 1 in 7 blocks foreground, which fits between these; no contradiction.
 - Images: `docs/img/p2_SAL_n1_7_checker_crop1to1.png` (1:1, original | decoded: alternate macroblocks smeared at n=7, sharp at n=1), `docs/img/p2_video2_n2_5_checker_crop1to1.png`, `docs/img/p2_video2_n5_2_checker_crop1to1.png`, `docs/img/p2_video2_n2_5_checker_half.png` (side by side at half scale). At half scale the difference is barely visible, which supports the 1:1 zoom in D8.
 - Determinism: the synthetic end-to-end test runs the harness twice and checks equal SHA-256 (`CodecHarnessTest`).
+
+### P2.9 Mac measurements (Nov 11, MacBook Air M-series, 8 cores, JDK 21, via `bash out/p29.sh`)
+CodecHarness, fake checkerboard labels (half the macroblocks foreground), zlib level 1, 8 threads unless noted. video2 = first 120 frames (480x848), SAL = first 60 frames (1920x1080, padded 1088). Times are per frame and exclude reading the mp4. Raw output: `out/p29.txt`.
+
+| Clip | n1, n2 | Stored MB/frame | Ratio | Encode ms | Decode ms | PSNR all / fg / bg (dB) |
+|---|---|---|---|---|---|---|
+| video2 | 0, 0 | 0.81 | 3.03x | 22.4 | 8.6 | 59.47 / 59.47 / 59.47 |
+| video2 | 2, 5 | 0.35 | 6.99x | 15.1 | 6.5 | 37.22 / 48.14 / 34.39 |
+| video2 | 5, 2 | 0.35 | 7.00x | 12.9 | 7.5 | 37.23 / 34.40 / 48.14 |
+| video2 | 1, 7 | 0.38 | 6.37x | 13.7 | 6.7 | 29.72 / 52.76 / 26.73 |
+| video2 | 4, 4 | 0.26 | 9.38x | 10.9 | 5.6 | 38.80 / 38.80 / 38.79 |
+| SAL | 0, 0 | 4.21 | 2.98x | 136.7 | 45.6 | 58.97 / 58.97 / 58.97 |
+| SAL | 2, 5 | 1.79 | 7.00x | 71.6 | 30.8 | 37.29 / 47.74 / 34.48 |
+| SAL | 5, 2 | 1.79 | 7.03x | 66.0 | 31.7 | 37.29 / 34.48 / 47.74 |
+| SAL | 1, 7 | 2.01 | 6.26x | 70.9 | 31.4 | 29.81 / 52.21 / 26.81 |
+| SAL | 4, 4 | 1.31 | 9.59x | 53.6 | 27.2 | 38.79 / 38.80 / 38.79 |
+| SAL, 1 thread | 2, 5 | 1.79 | 7.00x | 113.0 | 52.4 | same as 8 threads |
+| SAL, `--raw` | 2, 5 | 12.57 | 1.00x | 33.5 | 16.5 | same as zlib |
+
+What the numbers say
+- Layer effect holds at both sizes: (2,5) gives fg about 48 dB vs bg about 34 dB; (5,2) reverses it; (1,7) widens the gap to about 26 dB. (The near-exact mirror is the checkerboard artifact noted in P2.6.)
+- n = 0 loses only rounding: 59 dB on both clips (H2 target >= 45 dB).
+- Determinism: SAL (2,5) has the same SHA-256 (`5fb928af...`) with 8 threads and with 1 thread, so threading never changes the file.
+- zlib is lossless (raw and zlib runs give identical PSNR) and worth 3x (n=0) to 9.6x (4,4); size falls as n rises.
+- zlib cost per 1080p frame, from the raw vs zlib rows: deflate about 38 ms (71.6 - 33.5), inflate about 14 ms (30.8 - 16.5). Both are single-threaded per frame, which is why 8 threads only speed one frame up 1.6 to 1.7x.
+- Decoder budget (03 D8): one 1080p frame decodes in 27 to 32 ms at typical settings but 45.6 ms at n = 0, against 33.3 ms at 30 fps, before painting. Single-frame decoding cannot hold real time in the worst case: P3 must decode several frames ahead in parallel (frame-level parallelism also parallelizes inflate).
+- Encode budget: worst case SAL n=0 at 136.7 ms/frame is about 60 s for all 437 frames, plus segmentation. Comfortably inside the 10-minute limit.
+- Images (Mac run, frame 30 of SAL, 1:1, original | decoded): `docs/img/p29_SAL_n0_0_crop1to1.png`, `p29_SAL_n2_5_crop1to1.png`, `p29_SAL_n5_2_crop1to1.png`, `p29_SAL_n1_7_crop1to1.png`, `p29_SAL_n4_4_crop1to1.png`; video2 side by side `docs/img/p29_video2_n2_5_half.png`.
