@@ -82,6 +82,11 @@ public final class FrameCache {
         return insert(k, pipeline.get(k));
     }
 
+    /** True if frame k is in the ring or already decoded by the pipeline, so get(k) will not wait. */
+    public boolean isReady(int k) {
+        return slotOf.containsKey(k) || pipeline.isReady(k);
+    }
+
     /** True if frame k is in the ring (no decode needed). */
     public boolean contains(int k) {
         return slotOf.containsKey(k);

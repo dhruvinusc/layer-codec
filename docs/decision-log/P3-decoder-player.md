@@ -105,3 +105,18 @@ Owner: Window C. Oldest first. Matching technical entries: repo docs/DECISIONS.m
 - Cost or limitation: If decoding were always slower than 33 ms, the video would look choppy (but still on time). Our pipeline decodes faster than that (RESULTS P3.1), so drops should be rare.
 - Say it in the presentation: "The player never slows the video down: if a frame is late it skips ahead to the right one and counts it, so you can see exactly how often that happens."
 - Likely professor question: Why drop a frame instead of slowing down? / Answer: The brief asks for the original frame rate, and a slowed clip misrepresents the video. Dropping keeps time correct, and our counter shows it almost never happens.
+
+### P3-L8: Filling a small buffer before the clock starts
+- Date / window: Nov 12, Window C (found in Mac run 1)
+- Brief says: Play at the original frame rate (D4).
+- The problem in plain words: On the first Mac run every clip "played" 9 to 17% too short, with all drops at the start. The clock started before the first picture was on screen, so the half second spent opening the window and decoding the first frame (code that has not warmed up yet) looked like the player was already 19 frames behind.
+- Options we considered:
+  1. Start the clock immediately : good simplest / bad the start-up time is counted as lag and frames are skipped
+  2. Start the clock when frame 0 appears : good removes most of it / bad the next frames may still not be decoded yet
+  3. Pre-roll: show frame 0, wait until the next 6 frames are decoded (at most 1 second), then start : good what real video players do with their buffer / bad playback begins up to 1 second later
+- What we chose: Option 3.
+- Why (plain words): The viewer sees frame 0 straight away, and the clock only starts once the decoder is ahead. The duration is then measured honestly, from the moment playback really starts.
+- Proof: Mac run 1 numbers in RESULTS P3.3 (video2: 19 drops, 3.33 s instead of 4.00 s). PlayerTest slowStartIsAbsorbedByPrerollNotCountedAsDrops: a 0.6 s cold start now gives 0 drops and exactly 4.00 s. Mac run 2 numbers to follow.
+- Cost or limitation: Up to 1 second of waiting on frame 0 before motion starts.
+- Say it in the presentation: "Our first measurement showed clips finishing early; the cause was start-up time counted as lag, so like any video player we now fill a small buffer before starting the clock."
+- Likely professor question: Isn't the pre-roll hiding a slow decoder? / Answer: No. It only covers the one-time start. The report counts every late and dropped frame after that, and the last 100 frames had zero drops even before the fix.

@@ -26,10 +26,15 @@ import java.util.function.LongSupplier;
  */
 public final class Player {
 
-    /** Where frames come from: in production {@link FrameCache#get}. */
+    /** Where frames come from: in production {@link FrameCache}. */
     @FunctionalInterface
     interface Source {
         FrameCache.Entry get(int k) throws IOException, InterruptedException;
+
+        /** True if frame k can be returned without waiting (used only for pre-roll). */
+        default boolean isReady(int k) {
+            return true;
+        }
     }
 
     /** Where frames go: in production a {@link Display}. */
@@ -44,6 +49,10 @@ public final class Player {
     static final long KEY_POLL_NANOS = 5_000_000L;
     /** Wait between key checks while paused. */
     static final long PAUSED_POLL_NANOS = 50_000_000L;
+    /** Frames decoded ahead before the clock starts (pre-roll), like any video player's buffer. */
+    static final int PREROLL_FRAMES = 6;
+    /** Longest pre-roll wait, so a very slow machine still starts. */
+    static final long PREROLL_MAX_NANOS = 1_000_000_000L;
     /** Frames in each of the first and last windows of the thermal report (H3 P3.7). */
     static final int WINDOW = 100;
 
@@ -105,7 +114,11 @@ public final class Player {
 
     /** Plays until the viewer quits. Prints the timing report once, at the end of the first pass. */
     public Report run() throws IOException, InterruptedException {
-        anchor(0);
+        if (!preroll()) {
+            Report r = report();
+            out.println(r.format());
+            return r;
+        }
         while (true) {
             Display.Key k;
             if (playing) {
@@ -124,6 +137,36 @@ public final class Player {
                 handle(k);
             }
         }
+    }
+
+    /**
+     * Shows frame 0, waits until the next few frames are decoded (or 1 s passes), then starts the
+     * clock with frame 0 counted as shown at that moment. Without this, window creation, the first
+     * cold decode and the first paint (about half a second on the Mac, P3.3 run 1) were counted as
+     * falling behind, so the first ~19 frames were dropped and every clip "played" 9 to 17% short.
+     * Returns false if the viewer quit during pre-roll.
+     */
+    private boolean preroll() throws IOException, InterruptedException {
+        show(0, source.get(0));
+        int upTo = Math.min(frameCount - 1, PREROLL_FRAMES);
+        long start = now.getAsLong();
+        while (!readyThrough(upTo) && now.getAsLong() - start < PREROLL_MAX_NANOS) {
+            if (screen.waitKey(KEY_POLL_NANOS) == Display.Key.QUIT) {
+                return false;
+            }
+        }
+        anchor(0);
+        shownAt[0] = t0; // frame 0 has been on screen since before t0; its slot ends at t0 + period
+        return true;
+    }
+
+    private boolean readyThrough(int upTo) {
+        for (int k = 1; k <= upTo; k++) {
+            if (!source.isReady(k)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** One step of playing: wait for the next deadline (watching keys) or show the newest due frame. */

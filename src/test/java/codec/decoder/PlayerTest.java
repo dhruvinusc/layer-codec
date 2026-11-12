@@ -27,6 +27,8 @@ class PlayerTest {
     private static final class World implements Player.Source, Player.Screen {
         long now = 1_000_000L; // never 0, which the player uses for "not shown"
         final long decodeNanos;
+        long firstDecodeExtra; // a slow cold start (window, JIT, first paint)
+        int gets;
         final List<Integer> painted = new ArrayList<>();
         final List<String> statuses = new ArrayList<>();
         final TreeMap<Long, Display.Key> keys = new TreeMap<>();
@@ -38,7 +40,7 @@ class PlayerTest {
 
         @Override
         public FrameCache.Entry get(int k) {
-            now += decodeNanos;
+            now += decodeNanos + (gets++ == 0 ? firstDecodeExtra : 0);
             return new FrameCache.Entry(k, 4, 2, new int[8], new byte[4]);
         }
 
@@ -97,8 +99,9 @@ class PlayerTest {
         assertEquals(120, r.first().shown() + r.first().dropped() + r.last().shown() + r.last().dropped()
                 - overlap(r), "every frame is either shown or dropped");
         assertEquals(119, (int) w.painted.get(w.painted.size() - 1), "the last frame is always shown");
-        // Holding the rate means the clip still takes its true length (plus at most one decode).
-        assertEquals(4.0, r.measuredSeconds(), 0.06);
+        // Holding the rate means the clip still takes its true length, give or take the last
+        // frame's lateness: at most one period (33 ms) plus one decode (50 ms).
+        assertEquals(4.0, r.measuredSeconds(), 0.084);
         for (int i = 1; i < w.painted.size(); i++) {
             assertTrue(w.painted.get(i) >= w.painted.get(i - 1), "never goes backwards while playing (the end repaints the last frame as PAUSED)");
         }
@@ -146,5 +149,17 @@ class PlayerTest {
         w.player(3).run();
         String s = w.statuses.get(0);
         assertTrue(s.startsWith("frame 1/3  0.00 s  n1=2 n2=5  dropped 0  late 0  PLAYING"), s);
+    }
+
+    @Test
+    void slowStartIsAbsorbedByPrerollNotCountedAsDrops() throws Exception {
+        // Mac run 1 (P3.3): about 0.6 s of start-up was counted as falling behind, dropping ~19
+        // frames and making a 4.00 s clip "play" in 3.33 s. Pre-roll must remove that.
+        World w = new World(2_000_000L);
+        w.firstDecodeExtra = 600_000_000L;
+        Player.Report r = w.player(120).run();
+        assertEquals(0, r.dropped());
+        assertEquals(0, r.late());
+        assertEquals(4.0, r.measuredSeconds(), 0.004);
     }
 }

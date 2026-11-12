@@ -107,13 +107,28 @@ public final class DecoderMain {
                 FrameCache cache = new FrameCache(p);
                 Display d = new Display("mydecoder  " + name, h.width(), h.height());
                 try {
-                    new Player(h, r.frameCount(), cache::get, screen(d), System::nanoTime, System.out,
+                    new Player(h, r.frameCount(), source(cache), screen(d), System::nanoTime, System.out,
                             name + " (" + workers + " workers)").run();
                 } finally {
                     d.close();
                 }
             }
         }
+    }
+
+    /** Adapts the step-back cache to the player's source interface (get + pre-roll readiness). */
+    private static Player.Source source(FrameCache cache) {
+        return new Player.Source() {
+            @Override
+            public FrameCache.Entry get(int k) throws IOException, InterruptedException {
+                return cache.get(k);
+            }
+
+            @Override
+            public boolean isReady(int k) {
+                return cache.isReady(k);
+            }
+        };
     }
 
     /** Adapts the Swing display to the player's screen interface. */

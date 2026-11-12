@@ -123,3 +123,19 @@ What the numbers say
 - Scaling is near-linear to 4 workers (2.9x at n=0, 3.3x at (2,5)), then flattens: 6 workers add 17% at n=0 and nothing at (2,5). The Air likely has 4 performance and 4 efficiency cores, plus shared memory bandwidth (each 1080p frame is about 25 MB of int planes). Default stays max(2, cores-2) = 6 because it is best at n=0, the case that needs it.
 - Peak buffered stayed 1 to 6 (capacity 8): with no display the consumer drains as fast as workers produce. Real buffering is measured in P3.3 with the player.
 - Pipeline at 1 worker equals serial (72.1 vs 71.9 ms), so the pipeline adds no measurable overhead.
+
+### P3.3 Player, Mac run 1 (Nov 12, BEFORE the pre-roll fix; kept for honesty)
+`./mydecoder <file> [--workers N]`, uninterrupted first pass. Short test files (fake checkerboard labels).
+
+| File | Workers | Dropped | Late | Played vs clip | Mean wait for a frame |
+|---|---|---|---|---|---|
+| video2 (2,5), 120 f | 6 | 19 (15.8%), all in frames 0..19 | 3 | 3.33 s vs 4.00 s (-16.8%) | 0.8 ms |
+| SAL (2,5), 60 f | 6 | 12 (20.0%) | 16 (26.7%) | 1.76 s vs 2.00 s (-12.1%) | 10.1 ms |
+| SAL (2,5), 60 f | 4 | 4 (6.7%) | 5 (8.3%) | 1.81 s vs 2.00 s (-9.3%) | 1.9 ms |
+| SAL (0,0), 60 f | 6 | 8 (13.3%) | 20 (33.3%) | 1.78 s vs 2.00 s (-11.2%) | 5.6 ms |
+| SAL (0,0), 60 f | 4 | 5 (8.3%) | 7 (11.7%) | 1.81 s vs 2.00 s (-9.5%) | 4.0 ms |
+
+Diagnosis
+- Bug, not speed: the clock started before frame 0 reached the screen. Window creation, the first cold decode and the first paint (about 0.6 s) counted as falling behind, so the first frames were dropped and the measured time was short by exactly that amount (video2: 19 frames = 0.63 s; 4.00 - 0.63 = 3.37 s, measured 3.33 s). video2's last 100 frames had 0 drops at 30.4 fps, and its mean wait was 0.8 ms: decoding was never the problem.
+- Fix (P3-D7): pre-roll. Show frame 0, wait until frames 1..6 are decoded (at most 1 s), then start the clock. Test `slowStartIsAbsorbedByPrerollNotCountedAsDrops` (0.6 s cold start: 0 drops, 4.00 s).
+- 4 vs 6 workers: 6 workers had 2.5x to 3x more late frames on SAL. Likely cause: the display scaler runs its rows on Java's shared thread pool, which competes with 6 decode workers for 8 cores (4 of them efficiency cores). Re-measured after the fix before deciding the default.
