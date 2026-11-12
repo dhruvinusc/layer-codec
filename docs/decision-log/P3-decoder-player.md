@@ -74,3 +74,19 @@ Owner: Window C. Oldest first. Matching technical entries: repo docs/DECISIONS.m
 - Cost or limitation: Speed flattens after 4 workers. The MacBook Air likely has 4 performance and 4 efficiency (slower, power-saving) cores, and all workers share the same memory bandwidth (each 1080p frame is about 25 MB). Late-frame counts with the real player (P3.3) and long runs on a fanless laptop (P3.7) may still favor 4; we will re-check there.
 - Say it in the presentation: "Six workers is the fastest setting at the hardest quality level, and going past four mostly hits the limits of the laptop's slower cores and memory."
 - Likely professor question: Why not use all 8 cores? / Answer: The display thread must paint a frame every 33 ms and the system needs a core too. Our measurements show 4 to 6 workers already exceed real time, so taking the last two cores would only risk late paints.
+
+### P3-L6: A 30-frame cache for stepping back
+- Date / window: Nov 12, Window C
+- Brief says: Play, pause and step frame by frame (E2). Stepping backwards is not mentioned.
+- The problem in plain words: The decoder only runs forward. Without a cache, one press of the left arrow throws away the work in progress and waits 54 to 72 ms for a fresh decode of one 1080p frame.
+- Options we considered:
+  1. No cache, always decode again : good no memory / bad every step back waits and wastes work
+  2. Keep the last 30 frames as three number planes (red, green, blue) : good no conversion / bad about 750 MB at 1080p
+  3. Keep the last 30 frames packed (red, green and blue squeezed into one number per pixel) : good about 250 MB, and it is the form the screen paints / bad a small pack and unpack step
+  4. Keep the whole clip : good any step is instant / bad SAL would need 3.6 GB packed
+- What we chose: Option 3. A ring of the last 30 frames (one second of video), packed. The oldest frame leaves first and its memory is reused. Anything older is decoded again straight from the file, using the footer table of frame positions.
+- Why (plain words): One second of instant step-back covers normal inspection, and 250 MB fits next to the 200 MB decode window inside the 4 GB memory limit. Going further back still works, it just costs one decode per step.
+- Proof: FrameCacheTest stepBackFiftyFrom100CrossesTheCacheBoundaryCorrectly: after playing to frame 100 the ring holds 71 to 100; stepping back to 50 gives 29 cache hits and 21 re-decodes, and every frame matches a fresh decode pixel for pixel. memoryFigureFor30Frames1080p: 249.8 MB.
+- Cost or limitation: Each step back past the ring restarts the decode window, which decodes up to 8 frames to use one. Fine for occasional long jumps; we will check how it feels in the player (P3.3).
+- Say it in the presentation: "The last second of video is kept in memory, so stepping back is instant; further back, we jump straight to that frame in the file using the frame table."
+- Likely professor question: How does step back work beyond the cache? / Answer: The file's footer lists where every frame starts, so the decoder reads just that frame and decodes it. It never rereads the file from the beginning.
