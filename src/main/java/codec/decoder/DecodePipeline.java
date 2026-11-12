@@ -87,9 +87,15 @@ public final class DecodePipeline implements AutoCloseable {
         }
     }
 
-    /** Cores minus 2 (display thread and the rest of the system), at least 2 (H3). */
+    /**
+     * Half the cores (4 on the 8-core Mac), at least 2, never more than cores minus 2 (P3-D8).
+     * Mac playback (RESULTS P3.3 run 2): at 1080p, 6 workers made 30 to 45% of frames late
+     * because the display's scaler shares the cores; 4 workers gave 8 to 10% with zero drops,
+     * and the bench shows 4 workers already decode at 1.4x to 2x real time.
+     */
     public static int defaultWorkers() {
-        return Math.max(2, Runtime.getRuntime().availableProcessors() - 2);
+        int cores = Runtime.getRuntime().availableProcessors();
+        return Math.max(2, Math.min(cores - 2, cores / 2));
     }
 
     /** Frames that fit in a quarter of the heap, between 2 and max(8, workers). */

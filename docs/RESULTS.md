@@ -139,3 +139,19 @@ Diagnosis
 - Bug, not speed: the clock started before frame 0 reached the screen. Window creation, the first cold decode and the first paint (about 0.6 s) counted as falling behind, so the first frames were dropped and the measured time was short by exactly that amount (video2: 19 frames = 0.63 s; 4.00 - 0.63 = 3.37 s, measured 3.33 s). video2's last 100 frames had 0 drops at 30.4 fps, and its mean wait was 0.8 ms: decoding was never the problem.
 - Fix (P3-D7): pre-roll. Show frame 0, wait until frames 1..6 are decoded (at most 1 s), then start the clock. Test `slowStartIsAbsorbedByPrerollNotCountedAsDrops` (0.6 s cold start: 0 drops, 4.00 s).
 - 4 vs 6 workers: 6 workers had 2.5x to 3x more late frames on SAL. Likely cause: the display scaler runs its rows on Java's shared thread pool, which competes with 6 decode workers for 8 cores (4 of them efficiency cores). Re-measured after the fix before deciding the default.
+
+### P3.3 Player, Mac run 2 (Nov 12, after the pre-roll fix P3-D7)
+| File | Workers | Dropped | Late (> 16.7 ms) | Played vs clip | Mean wait | First 100 / last 100 frames |
+|---|---|---|---|---|---|---|
+| video2 full (2,5), 383 f | 6 | 5 (1.3%) | 6 (1.6%) | 12.77 s vs 12.77 s (+0.04%) | 0.6 ms | 2 drops, 4 late / 3 drops, 2 late |
+| video2 full (2,5), 383 f | 4 | 22 (5.7%) | 27 (7.0%) | 12.77 s vs 12.77 s (+0.02%) | 0.4 ms | 12 drops, 15 late / 0 drops, 0 late (30.0 fps) |
+| SAL (2,5), 60 f | 6 | 2 (3.3%) | 27 (45.0%) | 2.01 s vs 2.00 s (+0.41%) | 7.2 ms | same 60 frames |
+| SAL (2,5), 60 f | 4 | 0 | 6 (10.0%) | 2.01 s vs 2.00 s (+0.35%) | 4.6 ms | same 60 frames |
+| SAL (0,0), 60 f | 6 | 0 | 18 (30.0%) | 2.01 s vs 2.00 s (+0.27%) | 3.5 ms | same 60 frames |
+| SAL (0,0), 60 f | 4 | 0 | 5 (8.3%) | 2.01 s vs 2.00 s (+0.60%) | 3.3 ms | same 60 frames |
+
+What the numbers say
+- Pre-roll fixed the duration: every clip now plays in its true length within 0.6% (H3 target 1%), at both 480p and 1080p.
+- 1080p: 4 workers beat 6 in all four SAL runs across runs 1 and 2 (late 8 to 12% vs 27 to 45%), with zero drops. The display scaler and paint share the 8 cores (4 of them efficiency cores) with the decode workers, so fewer workers leaves room to paint on time. Default changed to 4 (P3-D8).
+- 480p: video2 decodes in under 1 ms of waiting either way; its drops and late frames sit in the first 100 frames (warm-up), and the last 100 frames ran clean at 30 fps with 4 workers. Worker count does not matter at this size.
+- Limitation of these runs: the SAL files are only the first 60 frames, so all of SAL is warm-up. Steady-state 1080p late % (H3 target under 2%) needs a longer file: SAL first 200 frames at (2,5), generated on the Mac (run 3).

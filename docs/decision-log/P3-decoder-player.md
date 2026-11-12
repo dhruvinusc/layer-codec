@@ -120,3 +120,18 @@ Owner: Window C. Oldest first. Matching technical entries: repo docs/DECISIONS.m
 - Cost or limitation: Up to 1 second of waiting on frame 0 before motion starts.
 - Say it in the presentation: "Our first measurement showed clips finishing early; the cause was start-up time counted as lag, so like any video player we now fill a small buffer before starting the clock."
 - Likely professor question: Isn't the pre-roll hiding a slow decoder? / Answer: No. It only covers the one-time start. The report counts every late and dropped frame after that, and the last 100 frames had zero drops even before the fix.
+
+### P3-L9: Changing the default from 6 workers to 4
+- Date / window: Nov 12, Window C (replaces the default chosen in P3-L5)
+- Brief says: Play at the original frame rate (D4).
+- The problem in plain words: P3-L5 picked 6 workers because they decode fastest. But the real player also has to scale and paint every frame, and on the Mac that work shares the same cores. With 6 workers busy, paints were often late.
+- Options we considered:
+  1. Keep 6 workers : good fastest decoding (47.7 fps at the hardest setting) / bad 27 to 45% of 1080p frames painted late
+  2. 4 workers : good 8 to 12% late, zero drops, still decodes 1.4x to 2x faster than real time / bad less spare decode speed at the hardest setting
+  3. Make painting itself cheaper first : good could help both / bad more code for a gain we can already get by choosing 4
+- What we chose: 4 workers on the Mac. The rule is half the cores, at least 2, and never more than cores minus 2.
+- Why (plain words): What the grader sees is the painted picture, not the decoder's speed. Measured in the real player, 4 workers paint on time far more often, and they still decode faster than the video plays.
+- Proof: RESULTS P3.3 runs 1 and 2: SAL (2,5) late 45% with 6 workers vs 10% with 4; SAL (0,0) 30% vs 8.3%; drops 0 with 4 workers. Bench (P3.1): 4 workers = 40.7 fps at (0,0), 60.7 fps at (2,5).
+- Cost or limitation: At the hardest setting the decoder has less spare speed (1.36x real time instead of 1.59x). The full-length thermal test (P3.7) will show if that is enough over a whole clip.
+- Say it in the presentation: "We first picked six workers because they decode fastest, but measuring the real player showed four paint on time far more often, so we changed the default."
+- Likely professor question: Why would fewer threads be better? / Answer: The laptop has only four fast cores, and painting needs CPU too. Past four workers, extra decoders just compete with the painter, so frames arrive on time but get painted late.
