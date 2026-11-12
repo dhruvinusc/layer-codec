@@ -87,3 +87,4 @@ The VM reaches GitHub but not Maven Central or services.gradle.org.
 - [C/P3] Explain-back P3.1: Dhruvin's predictions right on ordering; throughput estimate corrected (45.6 ms was 8-core, single-core ~78 ms at n=0). His check led to P3-D1.
 - [C/P3] Next: Mac bench, then P3.2 FrameCache.
 - [C/P3] 2026-11-12 Mac bench recorded (RESULTS P3.1): SAL n=0 serial 71.9 ms; 6 workers 21.0 ms/frame = 47.7 fps (1.59x real time); (2,5) 4 workers 16.5 ms = 60.7 fps; scaling flattens past 4 workers. Default 6 kept.
+- [C/P3] 2026-11-12 Decision log (00 section 12): backfilled `docs/decision-log/P2-compression.md` (P2-L1 to P2-L15, from DECISIONS P2-D1..D10 and 03 D6, D7) and `docs/decision-log/P3-decoder-player.md` (P3-L1 to P3-L4). Next: P3.2 FrameCache.
