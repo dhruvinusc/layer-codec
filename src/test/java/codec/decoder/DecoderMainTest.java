@@ -36,4 +36,16 @@ class DecoderMainTest {
         assertThrows(IllegalArgumentException.class,
                 () -> DecoderMain.parse(new String[] {dir.resolve("missing.cmp").toString()}));
     }
+
+    @Test
+    void benchFlagParsed() throws IOException {
+        Path cmp = Files.createFile(dir.resolve("b.cmp"));
+        DecoderMain.Bench b = DecoderMain.parseBench(new String[] {cmp.toString(), "--bench", "--workers", "1,2,6"});
+        assertEquals(java.util.List.of(1, 2, 6), b.workers());
+        assertEquals(1, DecoderMain.parseBench(new String[] {cmp.toString(), "--bench"}).workers().size());
+        assertThrows(IllegalArgumentException.class,
+                () -> DecoderMain.parseBench(new String[] {cmp.toString(), "--bench", "--workers", "0"}));
+        assertThrows(IllegalArgumentException.class,
+                () -> DecoderMain.parseBench(new String[] {cmp.toString(), "--bench", "extra"}));
+    }
 }

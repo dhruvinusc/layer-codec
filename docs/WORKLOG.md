@@ -82,3 +82,7 @@ The VM reaches GitHub but not Maven Central or services.gradle.org.
   5. P3.4 side by side + 1:1 zoom + pan; P3.5 overlay from block_type map; these need new keys (s, d, z, mouse) in Display, which Window C now owns.
   6. P3.6 DecoderMain CLI, clear errors, hidden --bench; P3.7 Mac measurements (commands for Dhruvin).
 - [C/P3] Next: P3.1 DecodePipeline.
+- [C/P3] 2026-11-12 P3.1 done: `codec/decoder/DecodePipeline.java` (workers = max(2, cores-2), capacity from heap, window + generation, error per frame, close joins threads). `DecodePipelineTest` 8 tests: every frame bit-identical to serial DecodeCore; order under random worker delays; peak buffered <= capacity (and fills to it); seek back and jump ahead give the right image; decode error reported for that frame only; close leaves 0 threads and later get throws; range checks; default sizes. Hidden `--bench` in DecoderMain (P3-D3) + parse test. 107/107 green, zero warnings (sandbox).
+- [C/P3] Sandbox bench (4 cores, NOT authoritative): SAL n=0 serial 171 ms/frame; pipeline 1/2/4 workers = 132 / 51 / 33 ms/frame. Scaling works; Mac numbers pending (command in chat).
+- [C/P3] Explain-back P3.1: Dhruvin's predictions right on ordering; throughput estimate corrected (45.6 ms was 8-core, single-core ~78 ms at n=0). His check led to P3-D1.
+- [C/P3] Next: Mac bench, then P3.2 FrameCache.
