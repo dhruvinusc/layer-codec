@@ -341,6 +341,17 @@ public final class CmpFormat {
             return offsets.length;
         }
 
+        /** Byte position of frame k's compressed-length field (from the footer). */
+        public long offset(int k) {
+            return offsets[k];
+        }
+
+        /** {stored length, raw length} of frame k, as written in its 8-byte prefix. */
+        public int[] lengths(int k) throws IOException {
+            ByteBuffer pre = ByteBuffer.wrap(readAt(offsets[k], FRAME_PREFIX));
+            return new int[] {pre.getInt(), pre.getInt()};
+        }
+
         /** Raw (inflated) payload of frame k, length-checked. */
         public byte[] payload(int k) throws IOException {
             if (k < 0 || k >= offsets.length) {
