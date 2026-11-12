@@ -24,12 +24,12 @@ Due Wed Dec 2, 2026.
 - [ ] B11 Visual demarcation like the brief's figure (green background, red/blue foreground)
 
 ## C. Part 2: Compression (encoder)
-- [ ] C1 Frame split into 8x8 blocks; each inherits its 16x16 macroblock's label (partial [B/P2]: CmpFormat.blockTypes, CmpFormatTest.blockTypeOf8x8IsItsMacroblockLabel; final check after wire-up)
-- [ ] C2 8x8 DCT on all three channels (R, G, B) (partial [B/P2]: Dct, DctTest.matchesTextbookOracleOnRandomBlocks; per-channel use in CodecHarness P2.6)
-- [ ] C3 Uniform quantization, every table entry 2^n (n1 foreground, n2 background) (partial [B/P2]: Quant, QuantTest.errorIsAtMostHalfAStepAndGrowsWithN; n by block_type in P2.5/P2.6)
-- [ ] C4 Blocks written in scan line order (partial [B/P2]: CmpFormatTest.blocksAreInScanLineOrder385BytesEach; real frames in P2.6)
-- [ ] C5 File holds n1, n2, then per block: block_type + 64 coefficients x 3 channels (partial [B/P2]: CmpFormat v1, CmpFormatTest.headerIs48BytesWithPatchedCountsAndZeroReserved, threeFramesRoundTripIdenticallyWithAndWithoutZlib)
-- [ ] C6 Baseline without zigzag, intermediary representation, or entropy coding is acceptable (partial [B/P2]: coefficients stored row-major, no zigzag, P2-D1; zlib is lossless byte packing, 03 D7)
+- [ ] C1 Frame split into 8x8 blocks; each inherits its 16x16 macroblock's label (partial [B/P2]: fake labels; final check after wire-up. CmpFormat.blockTypes, CmpFormatTest.blockTypeOf8x8IsItsMacroblockLabel, FrameEncoderTest.blockTypesFollowLabelsAndRegionIdsCollapseToOne)
+- [x] C2 8x8 DCT on all three channels (R, G, B) ([B/P2] DctTest.matchesTextbookOracleOnRandomBlocks; FrameEncoder DCT per R, G, B; FrameEncoderTest.roundTripAtN0IsNearlyExact; RESULTS.md 'P2.6 CodecHarness first real-clip runs' (n=0 59 dB on video2 and SAL))
+- [x] C3 Uniform quantization, every table entry 2^n (n1 foreground, n2 background) ([B/P2] QuantTest.errorIsAtMostHalfAStepAndGrowsWithN; DecodeCoreTest.blockTypeChoosesTheExponent; CodecHarnessTest.syntheticClipEndToEndIsDeterministicAndN0IsNearlyLossless; RESULTS.md P2.6 (video2 (2,5) fg 47.47 / bg 32.67 dB); docs/img/p2_SAL_n1_7_checker_crop1to1.png)
+- [x] C4 Blocks written in scan line order ([B/P2] CmpFormatTest.blocksAreInScanLineOrder385BytesEach; FrameEncoder block index b -> (b % blocksX, b / blocksX); real frames round trip in RESULTS.md P2.6)
+- [x] C5 File holds n1, n2, then per block: block_type + 64 coefficients x 3 channels ([B/P2] CmpFormat v1 (03 D7); CmpFormatTest.headerIs48BytesWithPatchedCountsAndZeroReserved, threeFramesRoundTripIdenticallyWithAndWithoutZlib; real .cmp files in RESULTS.md P2.6)
+- [x] C6 Baseline without zigzag, intermediary representation, or entropy coding is acceptable ([B/P2] coefficients row-major, no zigzag (P2-D1); zlib is lossless byte packing only (03 D7, ZioTest); baseline mode 0)
 
 ## D. Part 3: Decoder
 - [ ] D1 Parses n1, n2, block types, coefficients (partial [B/P2]: CmpFormat.Reader + validation tests rule*)

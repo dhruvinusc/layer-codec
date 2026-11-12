@@ -74,6 +74,7 @@ Fake checkerboard labels (half the macroblocks foreground) unless noted. PSNR is
 | SAL, 6 | 1, 7 | 2.24 | 5.62x | 29.82 / 52.23 / 26.82 |
 
 - n = 0 loses only rounding (59 dB, H2 target >= 45). Swapping n1 and n2 swaps the fg/bg PSNR almost exactly (47.47 / 32.67 vs 32.68 / 47.47): early D5 evidence.
+- The near-exact PSNR mirror is a checkerboard artifact: both halves of the checkerboard hold statistically similar content, so swapping n1 and n2 swaps the numbers almost perfectly. With real labels (moving person vs scenery) the two layers differ in content, so the swap reverses which layer is cleaner but the numbers will not mirror exactly.
 - zlib ratio depends on the foreground share. SAL (2,5), 3 frames: all-fg 4.39x, checker 6.31x, all-bg 13.16x. The P0 speed gate's 10.3x used 1 in 7 blocks foreground, which fits between these; no contradiction.
-- Images: `docs/img/p2_SAL_n1_7_checker_crop1to1.png` (1:1, original | decoded: alternate macroblocks smeared at n=7, sharp at n=1), `docs/img/p2_video2_n2_5_checker_crop1to1.png`, `docs/img/p2_video2_n5_2_checker_crop1to1.png`. At half scale the difference is barely visible, which supports the 1:1 zoom in D8.
+- Images: `docs/img/p2_SAL_n1_7_checker_crop1to1.png` (1:1, original | decoded: alternate macroblocks smeared at n=7, sharp at n=1), `docs/img/p2_video2_n2_5_checker_crop1to1.png`, `docs/img/p2_video2_n5_2_checker_crop1to1.png`, `docs/img/p2_video2_n2_5_checker_half.png` (side by side at half scale). At half scale the difference is barely visible, which supports the 1:1 zoom in D8.
 - Determinism: the synthetic end-to-end test runs the harness twice and checks equal SHA-256 (`CodecHarnessTest`).
