@@ -104,3 +104,7 @@ The VM reaches GitHub but not Maven Central or services.gradle.org.
 - [C/P3] 2026-11-12 Mac run 4 (fair 4 vs 6) read from out/p3: all runs 0 drops (verified per frame in the traces), durations within 0.13%; 4 workers 3.5% late average vs 6 workers 5.75%; steady state (frames 100..199) 0 to 1 late with 4 workers. Late frames are JIT warm-up in the first 2 s. GC pauses small (max 25 ms). Run 3 collapse not reproduced. P3-D8 (4 workers) confirmed; decision log P3-L9 proof updated. Remaining for P3.3: Dhruvin's keys/status check.
 - [C/P3] 2026-11-12 P3.3 DONE. Dhruvin's visual check on the Mac: pause, step forward, step back, resume and status line "smooth". His run showed a report flaw: after a pause the window lines printed "shown 0 ... NaN fps" (paint times stop being recorded after the first pause). Fixed: windows print "not measured" when interrupted; PlayerTest asserts no NaN. 123/123 green.
 - [C/P3] P3.3 evidence: RESULTS P3.3 runs 1 to 4 (durations within 0.13%, 0 drops, steady-state 1080p 0 to 1% late with 4 workers), PlayerTest (6 tests on a fake clock), traces out/p3/r4_trace_*.csv. Next: P3.4 side by side + 1:1 zoom.
+
+## 2026-11-12 evening, Window A (P1), BATON MODE (Dhruvin away about 2 h)
+- [A/P1] STATUS at start: P1.1 done (03d33a1, full search on Y with tie-break and early exit, 39 tests at the time; RESULTS "P1.1" sandbox). P1.2 to P1.10 not started. Repo head b6987f5, decision-log P0 done (4dafeb9), P1 log missing.
+- [A/P1] Window A work continues in the original Window A chat (the fresh P1 chat has been idle since Nov 10).
