@@ -38,6 +38,10 @@ public final class VizSeg {
 
     public static void main(String[] args) throws IOException {
         Options o = Options.parse(args);
+        if (o.meCheck) {
+            meCheck(o.clip, o.range);
+            return;
+        }
         Files.createDirectories(o.out);
         String name = o.clip.getFileName().toString().replaceFirst("\\.[^.]+$", "");
         try (VideoIO.Reader reader = VideoIO.open(o.clip)) {
@@ -62,6 +66,90 @@ public final class VizSeg {
                 prevY = y;
             }
         }
+    }
+
+    /** Block variance at or above this counts as "textured" for the agreement check (std dev 10). */
+    static final int CHECK_TEXTURE_VAR = 100;
+    static final int CHECK_PAIRS = 5;
+
+    /**
+     * P1.3 evidence: hierarchical vs full search on {@link #CHECK_PAIRS} evenly spaced frame pairs.
+     * Agreement = both components within 1 px, counted on textured blocks only (flat blocks have
+     * no single right answer). Also reports agreement with lambda = 0 and ms per frame for each.
+     */
+    static void meCheck(Path clip, int range) throws IOException {
+        try (VideoIO.Reader reader = VideoIO.open(clip)) {
+            VideoInfo info = reader.info();
+            int n = Math.max(info.frameCount(), CHECK_PAIRS + 2);
+            int[] targets = new int[CHECK_PAIRS];
+            for (int k = 0; k < CHECK_PAIRS; k++) {
+                targets[k] = 1 + (n - 2) * (k + 1) / (CHECK_PAIRS + 1);
+            }
+            Frame f = Frame.allocate(info.width(), info.height());
+            int[] prevY = null;
+            long agree = 0;
+            long agree0 = 0;
+            long worse = 0;
+            long textured = 0;
+            double msFull = 0;
+            double msHier = 0;
+            MotionEstimator.HierParams p0 = new MotionEstimator.HierParams(3, 8, 2, 0);
+            for (int t = 0; t <= targets[CHECK_PAIRS - 1] && reader.read(f); t++) {
+                Frame p = Pad.toMacroblocks(f);
+                int[] y = ColorConv.luma(p);
+                if (prevY != null && contains(targets, t)) {
+                    int w = p.width();
+                    int h = p.height();
+                    MotionEstimator.hierarchical(y, prevY, w, h, MotionEstimator.HierParams.DEFAULT, null, 0, 0); // warm-up
+                    long t0 = System.nanoTime();
+                    MotionEstimator.Result full = MotionEstimator.fullSearch(y, prevY, w, h, range);
+                    long t1 = System.nanoTime();
+                    MotionEstimator.Result hier = MotionEstimator.hierarchical(y, prevY, w, h, MotionEstimator.HierParams.DEFAULT, null, 0, 0);
+                    long t2 = System.nanoTime();
+                    MotionEstimator.Result hier0 = MotionEstimator.hierarchical(y, prevY, w, h, p0, null, 0, 0);
+                    msFull += (t1 - t0) / 1e6;
+                    msHier += (t2 - t1) / 1e6;
+                    int cols = w / Types.MB;
+                    for (int i = 0; i < cols * (h / Types.MB); i++) {
+                        if (blockVariance(y, w, (i % cols) * Types.MB, (i / cols) * Types.MB) < CHECK_TEXTURE_VAR) {
+                            continue;
+                        }
+                        textured++;
+                        agree += close(full, hier, i) ? 1 : 0;
+                        agree0 += close(full, hier0, i) ? 1 : 0;
+                        // "Worse" = hierarchical match error more than 10% above full search's (a real miss,
+                        // not an equally good alternative on a repeating texture).
+                        if (!close(full, hier, i) && hier.sadBest()[i] * 10L > full.sadBest()[i] * 11L) {
+                            worse++;
+                        }
+                    }
+                }
+                prevY = y;
+            }
+            String name = clip.getFileName().toString();
+            System.out.printf("%s R=%d pairs=%s textured=%d agree(lambda=4)=%.1f%% agree(lambda=0)=%.1f%% "
+                    + "worse-by-10%%=%.1f%% full=%.0f ms/frame hier=%.0f ms/frame%n", name, range, Arrays.toString(targets), textured,
+                    100.0 * agree / textured, 100.0 * agree0 / textured, 100.0 * worse / textured, msFull / CHECK_PAIRS, msHier / CHECK_PAIRS);
+        }
+    }
+
+    private static boolean close(MotionEstimator.Result a, MotionEstimator.Result b, int i) {
+        return Math.abs(a.field().dx()[i] - b.field().dx()[i]) <= 1 && Math.abs(a.field().dy()[i] - b.field().dy()[i]) <= 1;
+    }
+
+    /** Integer variance of the 16x16 block at (x0, y0). */
+    static int blockVariance(int[] y, int w, int x0, int y0) {
+        long sum = 0;
+        long sq = 0;
+        for (int r = 0; r < Types.MB; r++) {
+            for (int c = 0; c < Types.MB; c++) {
+                int v = y[(y0 + r) * w + x0 + c];
+                sum += v;
+                sq += (long) v * v;
+            }
+        }
+        int n = Types.MB * Types.MB;
+        return (int) ((sq - sum * sum / n) / n);
     }
 
     static int[] defaultFrames(int frameCount) {
@@ -158,26 +246,28 @@ public final class VizSeg {
         ImageIO.write(img, "png", png.toFile());
     }
 
-    private record Options(Path clip, int[] at, boolean arrows, int range, Path out) {
+    private record Options(Path clip, int[] at, boolean arrows, int range, Path out, boolean meCheck) {
         static Options parse(String[] a) {
             if (a.length < 1) {
-                System.err.println("usage: VizSeg <clip> [--at f1,f2,..] [--arrows] [--range R] [--out dir]");
+                System.err.println("usage: VizSeg <clip> [--at f1,f2,..] [--arrows] [--range R] [--out dir] [--me-check]");
                 System.exit(2);
             }
             int[] at = null;
             boolean arrows = false;
             int range = 16;
             Path out = Path.of("out", "viz");
+            boolean meCheck = false;
             for (int i = 1; i < a.length; i++) {
                 switch (a[i]) {
                     case "--at" -> at = Arrays.stream(a[++i].split(",")).mapToInt(Integer::parseInt).toArray();
                     case "--arrows" -> arrows = true;
                     case "--range" -> range = Integer.parseInt(a[++i]);
                     case "--out" -> out = Path.of(a[++i]);
+                    case "--me-check" -> meCheck = true;
                     default -> throw new IllegalArgumentException("unknown option " + a[i]);
                 }
             }
-            return new Options(Path.of(a[0]), at, arrows, range, out);
+            return new Options(Path.of(a[0]), at, arrows, range, out, meCheck);
         }
     }
 }

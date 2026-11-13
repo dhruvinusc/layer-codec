@@ -74,3 +74,47 @@ Technical source: repo `docs/DECISIONS.md` (P1-D*) and Project doc 03 (D2, D3, D
 - Cost or limitation: full search at +/-32 is slow, so it is used only for checking.
 - Say it in the presentation: "video2's camera moves up to 16 pixels a frame, so the search must reach 32."
 - Likely professor question: How did you choose the range? / Answer: By measuring. At +/-16, 29% of video2 blocks sat on the window edge, a sign the true motion was outside it.
+
+### P1-L6: Layered (hierarchical) search as the default
+- Date / window: Nov 12, Window A (Project decision D2)
+- Brief says: a fast motion search is "even better" than brute force (B4).
+- The problem in plain words: full search is accurate but too slow (1.24 s per 1080p frame on the Mac at +/-16, four times that at +/-32).
+- Options we considered:
+  1. Three-step or diamond search (jump in big steps toward lower error) : good, very fast / bad, often gets stuck in the wrong valley on textured scenes.
+  2. Layered search: shrink the frame to half and quarter size, search widely on the tiny image, then refine at each bigger size : good, covers +/-32 px cheaply / bad, fine detail blurs in the tiny image.
+  3. Full search everywhere : good, simplest / bad, about 9 minutes for SAL alone.
+- What we chose: 3 layers (quarter, half, full), +/-8 at quarter size (about +/-32 at full), +/-2 refine per layer, plus a few extra guesses at full size (no motion, the neighbours' vectors, last frame's vector, the camera motion) and a final +/-1 polish.
+- Why (plain words): a 32 pixel move is only 8 pixels at quarter size, so the wide search is cheap there; each bigger layer only corrects the answer by a pixel or two.
+- Proof: test `HierarchicalSearchTest.recovers30PixelShiftThatFullSearch16Cannot`; RESULTS "P1.3": 3 to 6 times faster than full search, agreement 89.8% to 95.8%.
+- Cost or limitation: SAL agreement is 89.8%, 0.2 points under the 90% target, mostly on the brick wall where several positions match equally well.
+- Say it in the presentation: "I search a quarter-size image first, where a 32 pixel move is only 8 pixels, then refine on the bigger images."
+- Likely professor question: How do you know the fast search is right? / Answer: I compare it with full search on 5 frame pairs per clip. It agrees within 1 pixel on 90 to 96% of textured blocks, and only 1.6 to 4% of blocks get a clearly worse match.
+
+### P1-L7: Refine the 3 best coarse guesses, not just 1
+- Date / window: Nov 12, Window A (P1-D6, P1-D7)
+- Brief says: brief is silent.
+- The problem in plain words: on the quarter-size image, textures blur, so the single best coarse match is sometimes the wrong one.
+- Options we considered:
+  1. Refine only the best coarse match : good, fastest / bad, SAL agreement 87.3%.
+  2. Add a +/-1 polish at full size : good, cheap / bad, only fixes near misses (89.0%).
+  3. Also keep the 3 best coarse matches and refine each : good, recovers wrong-valley picks (89.8%) / bad, about 1.8 times slower.
+- What we chose: options 2 and 3 together.
+- Why (plain words): each step measurably reduced real misses, and the search is still about 2 times faster than full search at 1080p and 6 times faster on video2.
+- Proof: RESULTS "P1.3" (87.3% to 89.0% to 89.8% on SAL; video2 95.8%).
+- Cost or limitation: sandbox time per 1080p frame rose from 109 to 193 ms; the Mac number is pending (target 200 ms).
+- Say it in the presentation: "Instead of trusting one blurry coarse answer, I refine the three best and keep whichever matches best at full size."
+- Likely professor question: Why exactly 3? / Answer: It was the smallest number that fixed most wrong-valley picks; more starts cost time without measurable gain in agreement.
+
+### P1-L8: A small penalty for vectors that disagree with neighbours (lambda)
+- Date / window: Nov 12, Window A (Project decision D2)
+- Brief says: foreground regions should be consistent in motion direction (B7); silent on how vectors are found.
+- The problem in plain words: on bricks, railings and stripes the pattern repeats, so a position one brick away can match almost as well as the true one.
+- Options we considered:
+  1. Pure lowest match error : good, textbook / bad, picks period-shifted vectors on repeating textures.
+  2. Lowest match error plus a small cost for being far from the neighbours' typical vector (the median of left, top and top-right) : good, breaks near-ties toward the smooth answer / bad, a tiny object moving against its neighbours needs a clearly better match to win.
+- What we chose: option 2 with weight 4 per pixel of distance (a 256-pixel block's match error is usually in the hundreds to thousands, so this only decides near-ties).
+- Why (plain words): the penalty only matters when two positions are almost tied, which is exactly the repeating-texture case.
+- Proof: RESULTS "P1.3" (agreement with lambda 4 is equal or higher than lambda 0 on every clip). Further tuning in P1.9.
+- Cost or limitation: the effect on agreement is small (under 1 point); its value shows later in cleaner camera-motion fits and fewer false foreground blocks.
+- Say it in the presentation: "When two positions match almost equally, I prefer the one that agrees with the neighbours, which stops bricks from producing fake motion."
+- Likely professor question: Doesn't that blur real object edges? / Answer: Only when the match is nearly tied. A block on a real moving object matches its true position much better, so it still wins.

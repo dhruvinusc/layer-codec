@@ -182,3 +182,17 @@ What the numbers say
 - 4 vs 6, fair order: 4 workers averaged 3.5% late (0.5 to 5.5%), 6 workers 5.75% (3.0 to 8.5%); in the steady part (frames 100..199) 4 workers had 0 to 1 late frames, 6 workers 2 to 8. Both 0 drops, both on time to 0.13%. 4 workers stay the default (P3-D8 confirmed); 6 decode faster in the bench but the extra speed is not needed.
 - Late frames cluster in the first 2 seconds (frames 7 to 62): Java compiles the hot code while it runs (JIT warm-up). Steady-state 1080p meets the H3 target (under 2% late, zero drops); counted over the whole clip including warm-up it is 0.5 to 5.5%.
 - Run 3's collapse did not come back, even straight after re-encoding the 362 MB file. GC pauses are small (largest 25 ms, total 33 to 82 ms per run), so memory clean-up is not the cause. Most likely a one-off disk stall on a 94% full disk; freeing disk (06 item D9) also lowers the demo risk.
+
+### P1.3 hierarchical vs full search [A/P1] (sandbox, 4 cores, not authoritative for speed; Mac run queued)
+`VizSeg <clip> --range R --me-check`: 5 evenly spaced frame pairs per clip. Agreement = both vector components within 1 px of full search, counted on textured blocks only (block variance >= 100). "Worse" = the hierarchical match error is more than 10% above full search's (a real miss, not an equally good alternative). Final version: 3 levels, +/-8 coarse (about +/-32 px), 3 coarse starts refined separately, +/-2 refine, extra candidates, +/-1 polish, lambda 4.
+
+| Clip | Full R | Textured blocks | Agree, lambda 4 | Agree, lambda 0 | Worse by >10% | Full ms/frame | Hier ms/frame |
+|---|---|---|---|---|---|---|---|
+| video2 | 32 | 5,348 | 95.8% | 95.9% | 1.6% | 224 | 37 |
+| video1 | 16 | 2,648 | 91.7% | 91.1% | 4.0% | 64 | 37 |
+| Stairs | 16 | 26,943 | 91.8% | 91.6% | 3.0% | 340 | 193 |
+| SAL | 16 | 28,240 | 89.8% | 89.5% | 4.0% | 383 | 193 |
+| SAL (check) | 32 | 28,240 | 87.9% | 88.8% | 6.6% | 1,334 | 195 |
+
+How the design got there (SAL agreement): single coarse winner 87.3%, plus a +/-1 polish 89.0%, plus 3 coarse starts 89.8%. Each step cost: hier 108 to 109 to 193 ms per 1080p frame (sandbox).
+Reading: 3 of 4 clips meet the 90% target; SAL is 0.2 points short. Most SAL disagreements are equally good matches on the brick wall's repeating pattern: with a wider +/-32 full search, full search finds even lower-error matches further away (6.6% "worse"), which are period-shifted aliases, not true motion. On periodic texture the lowest match error is not the true vector, which is why lambda exists and why segmentation also requires neighbours to agree (P1.6).
