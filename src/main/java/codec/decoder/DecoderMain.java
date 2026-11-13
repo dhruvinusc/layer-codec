@@ -35,7 +35,8 @@ public final class DecoderMain {
             "usage: mydecoder input_video.cmp [original_video.mp4]",
             "  plays the decoded video at its original frame rate",
             "  optional original_video.mp4 enables side-by-side comparison",
-            "  keys: space play/pause, right step, left step back, q quit");
+            "  keys: space play/pause, right step, left step back, q quit,",
+            "        s side by side, z 1:1 zoom (drag to pan), d foreground overlay");
 
     /**
      * A validated command line. {@code original} is null when side-by-side is not requested;
@@ -53,45 +54,47 @@ public final class DecoderMain {
     record Bench(Path cmp, List<Integer> workers) {}
 
     public static void main(String[] argv) {
-        if (argv.length >= 2 && argv[1].equals("--bench")) {
-            try {
-                runBench(parseBench(argv));
-            } catch (IllegalArgumentException e) {
-                System.err.println("error: " + e.getMessage());
-                System.exit(2);
-            } catch (IOException e) {
-                System.err.println("error: " + e.getMessage());
-                System.exit(1);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                System.exit(1);
+        // Pipeline threads are joined and the window disposed by the time run() returns; exit so
+        // no AWT thread lingers (P3 acceptance: nothing left running after q).
+        System.exit(run(argv, System.err));
+    }
+
+    /**
+     * The whole command line, returning the exit code instead of exiting, so every error path is
+     * testable (P3.6): 0 played or benched; 2 bad command line (usage printed); 1 the file or the
+     * machine is the problem (not a .cmp, wrong version, unfinished file, truncated or corrupt,
+     * original is a different video, no screen). Errors are one clear line on {@code err}.
+     */
+    static int run(String[] argv, PrintStream err) {
+        boolean bench = argv.length >= 2 && argv[1].equals("--bench");
+        Args args = null;
+        Bench b = null;
+        try {
+            if (bench) {
+                b = parseBench(argv);
+            } else {
+                args = parse(argv);
             }
-            return;
+        } catch (IllegalArgumentException e) { // includes a non-number after --workers
+            err.println("error: " + e.getMessage());
+            err.println(USAGE);
+            return 2;
         }
-        Args args;
         try {
-            args = parse(argv);
-        } catch (IllegalArgumentException e) {
-            System.err.println("error: " + e.getMessage());
-            System.err.println(USAGE);
-            System.exit(2);
-            return;
-        }
-        int code = 0;
-        try {
-            play(args);
-        } catch (IOException e) {
-            System.err.println("error: " + e.getMessage());
-            code = 1;
+            if (bench) {
+                runBench(b);
+            } else {
+                play(args);
+            }
+            return 0;
+        } catch (IOException | IllegalStateException e) {
+            err.println("error: " + e.getMessage());
+            return 1;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            code = 1;
-        } catch (IllegalStateException e) {
-            System.err.println("error: " + e.getMessage());
-            code = 1;
+            err.println("error: interrupted");
+            return 1;
         }
-        // Pipeline threads are joined and the window disposed by now; exit so no AWT thread lingers.
-        System.exit(code);
     }
 
     /** Opens the file, plays it, and tears everything down in reverse order. */

@@ -194,3 +194,17 @@ Owner: Window C. Oldest first. Matching technical entries: repo docs/DECISIONS.m
 - Cost or limitation: No per-region colors in the decoder; the encoder's VizSeg tool shows those (B11).
 - Say it in the presentation: "Press d and the decoder tints every block the encoder marked as foreground, straight from the file, so you can see that the sharp blocks are exactly the foreground ones."
 - Likely professor question: How does the overlay know what is foreground without segmentation code? / Answer: Every 8x8 block in our file starts with a block_type byte, 1 for foreground. The decoder reads that byte anyway to pick n1 or n2, and the overlay simply colors those blocks.
+
+### P3-L14: Clear errors and exit codes for mydecoder
+- Date / window: Nov 13, Window C
+- Brief says: `mydecoder input_video.cmp` decodes and renders (A3); the decoder needs nothing except the .cmp (A4). Error handling is not mentioned.
+- The problem in plain words: During a demo or grading, someone may pass the wrong file (the mp4 instead of the .cmp), a file from a crashed encode, or a different video as the original. A stack trace or a garbled picture would look broken.
+- Options we considered:
+  1. Let Java exceptions surface : good no code / bad long stack traces that hide the real reason
+  2. One plain error line per problem, plus a fixed exit code (2 for a bad command line, 1 for a bad file) : good the reason is obvious and scripts can check the result / bad every case needs a test
+- What we chose: Option 2. Every check happens before a window opens, so a bad file never shows a half-drawn picture.
+- Why (plain words): The file format already detects every kind of damage (P2-L6, P2-L8); this step makes sure the person running the decoder sees that reason in one line.
+- Proof: DecoderMainErrorsTest (10 tests): no arguments, missing file, non-number after --workers, an mp4 passed as the .cmp, file shorter than the header, wrong version, unfinished file, truncated file, bench on a bad and a good file, original that is a different video.
+- Cost or limitation: None worth noting.
+- Say it in the presentation: "Give the decoder the wrong file and it tells you why in one line, for example 'unfinished .cmp file: the encoder did not close it', before any window opens."
+- Likely professor question: What happens if the encoder crashed halfway? / Answer: The file's footer position is still zero, so the decoder prints "unfinished .cmp file" and exits with code 1. It never plays a partial file.
