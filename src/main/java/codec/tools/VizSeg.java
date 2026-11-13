@@ -8,9 +8,12 @@ import codec.common.Types.Labels;
 import codec.common.Types.MotionField;
 import codec.common.Types.VideoInfo;
 import codec.common.VideoIO;
+import codec.encoder.GlobalMotion;
 import codec.encoder.MotionEstimator;
+import codec.encoder.Segmenter;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -23,6 +26,10 @@ import javax.imageio.ImageIO;
  * 20%, 50% and 80% of the clip. Background blocks are tinted green, each foreground region gets
  * its own color (red, blue, ...), and with {@code --arrows} each macroblock shows its motion
  * vector drawn in the direction the content moved, (-dx, -dy) per 03 D12.
+ *
+ * <p>{@code --naive} labels with the naive baseline (P1.5) and {@code --sheet f.jpg} writes the frames
+ * side by side at half size. {@code --cam-stats [--step k]} fits the camera model on every k-th frame
+ * pair and writes {@code <out>/<clip>_cam.csv}. {@code --me-check} compares search methods (P1.3).
  *
  * <p>Drawing is done directly on the pixel array, so the tool needs nothing beyond ImageIO.
  */
@@ -42,6 +49,10 @@ public final class VizSeg {
             meCheck(o.clip, o.range);
             return;
         }
+        if (o.camStats) {
+            camStats(o.clip, o.step, o.out);
+            return;
+        }
         Files.createDirectories(o.out);
         String name = o.clip.getFileName().toString().replaceFirst("\\.[^.]+$", "");
         try (VideoIO.Reader reader = VideoIO.open(o.clip)) {
@@ -50,20 +61,40 @@ public final class VizSeg {
             int last = Arrays.stream(at).max().orElse(0);
             int[] prevY = null;
             Frame f = Frame.allocate(info.width(), info.height());
+            int[][] panels = new int[at.length][];
+            int panelCount = 0;
             for (int t = 0; t <= last && reader.read(f); t++) {
                 Frame p = Pad.toMacroblocks(f);
                 int[] y = ColorConv.luma(p);
                 if (prevY != null && contains(at, t)) {
                     long t0 = System.nanoTime();
-                    MotionEstimator.Result me = MotionEstimator.fullSearch(y, prevY, p.width(), p.height(), o.range);
+                    MotionEstimator.Result me = o.naive
+                            ? MotionEstimator.hierarchical(y, prevY, p.width(), p.height(), MotionEstimator.HierParams.DEFAULT, null, 0, 0)
+                            : MotionEstimator.fullSearch(y, prevY, p.width(), p.height(), o.range);
                     double ms = (System.nanoTime() - t0) / 1e6;
-                    Labels none = new Labels(me.field().cols(), me.field().rows(), new byte[me.field().cols() * me.field().rows()]);
-                    int[] rgb = render(p, none, o.arrows ? me.field() : null);
-                    Path png = o.out.resolve(String.format("%s_f%04d.png", name, t));
+                    int nb = me.field().cols() * me.field().rows();
+                    Labels labels = new Labels(me.field().cols(), me.field().rows(), new byte[nb]);
+                    String extra = "";
+                    if (o.naive) {
+                        boolean[] ok = Segmenter.reliable(y, p.width(), p.height(), me, Segmenter.SegConfig.DEFAULT);
+                        GlobalMotion.Model cam = GlobalMotion.fit(me.field(), ok, p.width(), p.height(), GlobalMotion.GmConfig.DEFAULT);
+                        labels = Segmenter.naive(y, p.width(), p.height(), me.field(), cam, Segmenter.SegConfig.DEFAULT);
+                        extra = String.format(", %s inliers %.2f, foreground %.1f%%", cam.kind(), cam.inlierRatio(), 100.0 * foreground(labels) / nb);
+                    }
+                    int[] rgb = render(p, labels, o.arrows ? me.field() : null);
+                    String tag = o.naive ? "_naive" : "";
+                    Path png = o.out.resolve(String.format("%s%s_f%04d.png", name, tag, t));
                     write(rgb, p.width(), p.height(), info.width(), info.height(), png);
-                    System.out.printf("%s frame %d: ME %.0f ms, %s%n", name, t, ms, png);
+                    if (o.sheet != null) {
+                        panels[panelCount++] = crop(rgb, p.width(), info.width(), info.height());
+                    }
+                    System.out.printf("%s frame %d: ME %.0f ms%s, %s%n", name, t, ms, extra, png);
                 }
                 prevY = y;
+            }
+            if (o.sheet != null) {
+                writeSheet(panels, panelCount, info.width(), info.height(), o.sheet);
+                System.out.println("sheet " + o.sheet);
             }
         }
     }
@@ -138,6 +169,107 @@ public final class VizSeg {
                     + "worse-by-10%%=%.1f%% full=%.0f ms/frame hier=%.0f ms/frame reliable=%.1f%%%n", name, range, Arrays.toString(targets), textured,
                     100.0 * agree / textured, 100.0 * agree0 / textured, 100.0 * worse / textured, msFull / CHECK_PAIRS, msHier / CHECK_PAIRS, 100.0 * reliableCount / blocksCount);
         }
+    }
+
+    static int foreground(Labels l) {
+        int n = 0;
+        for (byte b : l.id()) {
+            n += b != 0 ? 1 : 0;
+        }
+        return n;
+    }
+
+    /**
+     * P1.5 evidence: camera model per frame pair over the whole clip (every {@code step}-th pair).
+     * Hierarchical vectors, reliable blocks only, {@link GlobalMotion#fit}. Writes a per-frame CSV
+     * and prints the model mix, mean inlier ratio and mean inlier error.
+     */
+    static void camStats(Path clip, int step, Path outDir) throws IOException {
+        Files.createDirectories(outDir);
+        String name = clip.getFileName().toString().replaceFirst("\\.[^.]+$", "");
+        Path csv = outDir.resolve(name + "_cam.csv");
+        int[] kinds = new int[GlobalMotion.Kind.values().length];
+        double sumRatio = 0;
+        double sumRms = 0;
+        double sumReliable = 0;
+        double sumFit = 0;
+        double minRatio = 1;
+        int pairs = 0;
+        try (VideoIO.Reader reader = VideoIO.open(clip); PrintWriter pw = new PrintWriter(Files.newBufferedWriter(csv))) {
+            pw.println("frame,model,points,inliers,inlier_ratio,rms_px,cam_dx_center,cam_dy_center,reliable_pct,fit_ms");
+            VideoInfo info = reader.info();
+            Frame f = Frame.allocate(info.width(), info.height());
+            int[] prevY = null;
+            int[] hint = {0, 0};
+            for (int t = 0; reader.read(f); t++) {
+                Frame p = Pad.toMacroblocks(f);
+                int[] y = ColorConv.luma(p);
+                if (prevY != null && t % step == 0) {
+                    int w = p.width();
+                    int h = p.height();
+                    MotionEstimator.Result me = MotionEstimator.hierarchical(y, prevY, w, h, MotionEstimator.HierParams.DEFAULT, null, hint[0], hint[1]);
+                    boolean[] ok = Segmenter.reliable(y, w, h, me, Segmenter.SegConfig.DEFAULT);
+                    long t0 = System.nanoTime();
+                    GlobalMotion.Model cam = GlobalMotion.fit(me.field(), ok, w, h, GlobalMotion.GmConfig.DEFAULT);
+                    double fitMs = (System.nanoTime() - t0) / 1e6;
+                    hint = cam.centerVector(w, h);
+                    double rel = 100.0 * cam.points() / ok.length;
+                    pw.printf("%d,%s,%d,%d,%.3f,%.2f,%d,%d,%.1f,%.1f%n", t, cam.kind(), cam.points(), cam.inliers(),
+                            cam.inlierRatio(), cam.rmsInlierPx(), hint[0], hint[1], rel, fitMs);
+                    kinds[cam.kind().ordinal()]++;
+                    sumRatio += cam.inlierRatio();
+                    minRatio = Math.min(minRatio, cam.inlierRatio());
+                    sumRms += cam.rmsInlierPx();
+                    sumReliable += rel;
+                    sumFit += fitMs;
+                    pairs++;
+                }
+                prevY = y;
+            }
+        }
+        StringBuilder mix = new StringBuilder();
+        for (GlobalMotion.Kind k : GlobalMotion.Kind.values()) {
+            if (kinds[k.ordinal()] > 0) {
+                mix.append(String.format("%s %.0f%% ", k, 100.0 * kinds[k.ordinal()] / pairs));
+            }
+        }
+        System.out.printf("%s pairs=%d step=%d mix: %smean inlier ratio %.3f (min %.3f) mean rms %.2f px reliable %.1f%% fit %.1f ms csv %s%n",
+                name, pairs, step, mix, sumRatio / pairs, minRatio, sumRms / pairs, sumReliable / pairs, sumFit / pairs, csv);
+    }
+
+    /** Top-left trueW x trueH of a padded packed image. */
+    static int[] crop(int[] rgb, int w, int trueW, int trueH) {
+        int[] c = new int[trueW * trueH];
+        for (int y = 0; y < trueH; y++) {
+            System.arraycopy(rgb, y * w, c, y * trueW, trueW);
+        }
+        return c;
+    }
+
+    static final int SHEET_GAP = 8;
+
+    /** Panels side by side at half size (2x2 box average), JPEG, for docs/img. */
+    static void writeSheet(int[][] panels, int count, int w, int h, Path out) throws IOException {
+        int hw = w / 2;
+        int hh = h / 2;
+        BufferedImage img = new BufferedImage(count * hw + (count - 1) * SHEET_GAP, hh, BufferedImage.TYPE_INT_RGB);
+        for (int k = 0; k < count; k++) {
+            int[] src = panels[k];
+            for (int y = 0; y < hh; y++) {
+                for (int x = 0; x < hw; x++) {
+                    int a = src[2 * y * w + 2 * x];
+                    int b = src[2 * y * w + 2 * x + 1];
+                    int c = src[(2 * y + 1) * w + 2 * x];
+                    int d = src[(2 * y + 1) * w + 2 * x + 1];
+                    int r = (((a >> 16) & 0xFF) + ((b >> 16) & 0xFF) + ((c >> 16) & 0xFF) + ((d >> 16) & 0xFF) + 2) >> 2;
+                    int g = (((a >> 8) & 0xFF) + ((b >> 8) & 0xFF) + ((c >> 8) & 0xFF) + ((d >> 8) & 0xFF) + 2) >> 2;
+                    int bl = ((a & 0xFF) + (b & 0xFF) + (c & 0xFF) + (d & 0xFF) + 2) >> 2;
+                    img.setRGB(k * (hw + SHEET_GAP) + x, y, (r << 16) | (g << 8) | bl);
+                }
+            }
+        }
+        Files.createDirectories(out.toAbsolutePath().getParent());
+        ImageIO.write(img, "jpg", out.toFile());
     }
 
     private static boolean close(MotionEstimator.Result a, MotionEstimator.Result b, int i) {
@@ -253,10 +385,12 @@ public final class VizSeg {
         ImageIO.write(img, "png", png.toFile());
     }
 
-    private record Options(Path clip, int[] at, boolean arrows, int range, Path out, boolean meCheck) {
+    private record Options(Path clip, int[] at, boolean arrows, int range, Path out, boolean meCheck,
+                           boolean naive, boolean camStats, int step, Path sheet) {
         static Options parse(String[] a) {
             if (a.length < 1) {
-                System.err.println("usage: VizSeg <clip> [--at f1,f2,..] [--arrows] [--range R] [--out dir] [--me-check]");
+                System.err.println("usage: VizSeg <clip> [--at f1,f2,..] [--arrows] [--range R] [--out dir] [--me-check]"
+                        + " [--naive [--sheet file.jpg]] [--cam-stats [--step k]]");
                 System.exit(2);
             }
             int[] at = null;
@@ -264,6 +398,10 @@ public final class VizSeg {
             int range = 16;
             Path out = Path.of("out", "viz");
             boolean meCheck = false;
+            boolean naive = false;
+            boolean camStats = false;
+            int step = 1;
+            Path sheet = null;
             for (int i = 1; i < a.length; i++) {
                 switch (a[i]) {
                     case "--at" -> at = Arrays.stream(a[++i].split(",")).mapToInt(Integer::parseInt).toArray();
@@ -271,10 +409,17 @@ public final class VizSeg {
                     case "--range" -> range = Integer.parseInt(a[++i]);
                     case "--out" -> out = Path.of(a[++i]);
                     case "--me-check" -> meCheck = true;
+                    case "--naive" -> naive = true;
+                    case "--cam-stats" -> camStats = true;
+                    case "--step" -> step = Integer.parseInt(a[++i]);
+                    case "--sheet" -> sheet = Path.of(a[++i]);
                     default -> throw new IllegalArgumentException("unknown option " + a[i]);
                 }
             }
-            return new Options(Path.of(a[0]), at, arrows, range, out, meCheck);
+            if (step < 1) {
+                throw new IllegalArgumentException("--step must be >= 1");
+            }
+            return new Options(Path.of(a[0]), at, arrows, range, out, meCheck, naive, camStats, step, sheet);
         }
     }
 }

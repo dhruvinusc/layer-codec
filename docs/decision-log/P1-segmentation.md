@@ -133,3 +133,46 @@ Technical source: repo `docs/DECISIONS.md` (P1-D*) and Project doc 03 (D2, D3, D
 - Cost or limitation: in the dark video1 most blocks are unreliable, so its labels lean more on neighbours and on the 2-of-3 frame vote.
 - Say it in the presentation: "Blocks that are too flat or that found no good match do not get a vote; they borrow their label from neighbours."
 - Likely professor question: Why variance 100 and MAD 12? / Answer: They are starting values that remove sky, road and padding while keeping textured surfaces. All thresholds are tuned once, on all four clips together, in the tuning step.
+
+### P1-L10: Accepting 89.8% search agreement on SAL
+- Date / window: Nov 13, Window A (PM ruling on the P1.3 parcel)
+- Brief says: block matching by MAD, brute force or a faster search (B4); silent on accuracy targets.
+- The problem in plain words: our own target was 90% agreement between the fast search and the slow exact search; SAL reached 89.8%.
+- Options we considered:
+  1. Spend more search time until SAL passes : good, the number looks clean / bad, slower, and the extra matches it would find are often wrong anyway.
+  2. Accept it and report the real-miss rate beside it : good, honest about what the gap is / bad, one number is below its target.
+- What we chose: option 2. We always show agreement (89.8%) together with "real misses" (fast search clearly worse, 4.0%).
+- Why (plain words): on a brick wall the pattern repeats, so a vector one brick away can match equally well. Those disagreements are not mistakes by the fast search; even the exact search picks wrong "brick alias" vectors when given a wider window.
+- Proof: RESULTS "P1.3" (SAL 89.8%, worse by >10% only 4.0%; with a +/-32 exact search the exact search itself finds lower-error aliases).
+- Cost or limitation: about 4% of SAL blocks get a genuinely worse vector; reliability, the camera fit and the neighbour rule absorb them.
+- Say it in the presentation: "Ninety percent agreement is the headline, but the honest number is real misses, which stay at 4% or below on every clip."
+- Likely professor question: Why not just use full search? / Answer: It takes about 400 ms per 1080p frame in the sandbox and over a second at the range video2 needs. Hierarchical is 2 to 6 times faster and its disagreements are mostly equally good matches.
+
+### P1-L11: Finding the camera's motion with RANSAC and a homography
+- Date / window: Nov 13, Window A (P1-D11 to P1-D13; Project decision D3 step 2)
+- Brief says: background has near-zero vectors for a still camera, or one constant vector for a moving camera (B6).
+- The problem in plain words: all four clips have a moving camera, and on Stairs the camera tilts and the scene has depth, so background vectors are not one constant; we need a model of "what the camera alone would do" at every block.
+- Options we considered:
+  1. One constant vector (the brief's literal suggestion; the median) : good, simplest / bad, explains only 56 to 76% of Stairs blocks, so the rest would look like foreground.
+  2. Affine model (6 numbers: shift, rotation, zoom, shear) : good, handles rotation and zoom / bad, cannot represent perspective.
+  3. Homography (8 numbers: exact for a flat surface or a rotating camera), fitted with RANSAC, falling back to affine and then a constant vector : good, explains 77 to 90% of trustworthy blocks / bad, more code (a hand-written 8x8 solver).
+- What we chose: option 3. RANSAC repeatedly fits the model to 4 random blocks and keeps the fit most blocks agree with (within 2.5 px), then refits on all those blocks. Moving people are outliers and do not spoil the fit. Fixed random seed, so the result is the same every run.
+- Why (plain words): if the camera model is wrong, every background block has leftover motion and becomes false foreground. The homography is the simplest model that matches how a real camera sees a mostly flat wall or staircase.
+- Proof: `GlobalMotionTest` (a known homography with 30% junk vectors is recovered within 0.5 px); RESULTS "P1.5" (homography accepted on 1679 of 1680 frame pairs, mean inliers 0.74 to 0.90).
+- Cost or limitation: near-camera parallax (video2's ground and trees) breaks the "flat scene" assumption, so those blocks stay outliers; that is the main source of false foreground left for P1.6 to P1.8.
+- Say it in the presentation: "I fit the camera's own motion with a homography using RANSAC, so the walker's blocks are outvoted and the background, wherever the camera points, ends up with zero leftover motion."
+- Likely professor question: Why does a homography fit Stairs better than a translation? / Answer: The camera tilts while following the man down the stairs, so near and far parts of the scene shift by different amounts and the image changes in perspective. A single shift cannot describe that; a homography can.
+
+### P1-L12: The naive baseline we must beat
+- Date / window: Nov 13, Window A (P1-D14, P0-D5)
+- Brief says: foreground regions must be contiguous and consistent in motion direction (B7).
+- The problem in plain words: to show that each later step helps, we need a fixed "before" picture made with the same vectors and camera model.
+- Options we considered:
+  1. Reuse the PM prototype image : good, already exists / bad, made by different code, so comparisons are not fair.
+  2. Same code, simplest rule: textured block with leftover motion over 3 px, keep groups of 4 or more blocks : good, isolates what the later steps add / bad, it already benefits from our camera model.
+- What we chose: option 2, saved at 20/50/80% of each clip before any tuning.
+- Why (plain words): an honest before/after needs the same inputs on both sides.
+- Proof: `docs/img/naive_*.jpg`, RESULTS "P1.5 naive baseline overlays".
+- Cost or limitation: the baseline is a bit stronger than the prototype, which makes our later improvements look smaller, not bigger.
+- Say it in the presentation: "This is what you get if you just threshold leftover motion: the walker is found, but brick walls and fences light up too. Everything after this step exists to remove those."
+- Likely professor question: Why does the brick wall show up as moving? / Answer: Bricks repeat every few pixels, so some blocks pick a vector one brick away. That leftover is big but random in direction, which the direction-consistency rule in the next step removes.

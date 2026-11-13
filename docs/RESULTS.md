@@ -208,3 +208,29 @@ Reliable = block Y variance >= 100 and best-match MAD <= 12 (`Segmenter.SegConfi
 | SAL | 68.5% |
 
 Reading: video1 is a night scene with large dark, flat areas, so most blocks carry no usable motion evidence (doc 05 predicted 37 to 52% textured before the match test). These blocks are not labelled from their own vector; P1.7 gives them their neighbours' label. Thresholds are revisited in P1.9 tuning.
+
+P1.3 acceptance note [A/P1, Nov 13]: PM accepted SAL at 89.8% agreement (target 90%) because the disagreements are equal-quality brick aliases; the real-miss figure ("worse by >10%") is 4.0% on SAL and 1.6 to 4.0% across clips. Both numbers are reported together from here on. Decision log P1-L10.
+
+### P1.5 camera motion [A/P1] (sandbox, 4 cores, every frame pair of every clip; fit times not authoritative)
+`VizSeg <clip> --cam-stats`: hierarchical vectors, reliable blocks only (P1.4), RANSAC homography (500 iterations, seed 576, inlier distance 2.5 px, refit twice on inliers), fallback to affine then translation below 30% inliers or when the fit throws a frame corner more than 20% of the frame side. Per-frame CSV in `out/viz/<clip>_cam.csv`.
+
+| Clip | Pairs | Model mix | Mean inlier ratio (min) | Mean inlier error | Reliable blocks | Doc 05 prototype (homography, 3 px, textured) |
+|---|---|---|---|---|---|---|
+| video1 | 517 | homography 100% | 0.770 (0.357) | 1.07 px | 32.3% | 0.77 to 0.81 |
+| video2 | 382 | homography 381, translation 1 | 0.737 (0.177) | 1.07 px | 58.7% | 0.58 to 0.63 |
+| Stairs | 345 | homography 100% | 0.902 (0.675) | 0.72 px | 63.6% | 0.89 to 0.95 |
+| SAL | 436 | homography 100% | 0.853 (0.613) | 0.61 px | 66.9% | 0.75 to 0.84 |
+
+Reading: on the three 30 fps walking/pan clips the homography explains 77 to 90% of trustworthy blocks within 2.5 px, matching or beating the prototype. video2 is higher than the prototype because unreliable blocks no longer vote. The one fallback is video2 frame 30 (18% inliers, translation); its other low frames (60, 150, 180 at about 38%) are where the tracking shot shakes. Those frames are the reason for the 2-of-3 temporal vote in P1.8. Fit cost 1.5 to 10 ms per frame, small next to motion search.
+
+### P1.5 naive baseline overlays [A/P1] (saved BEFORE any segmentation tuning)
+`VizSeg <clip> --naive --sheet docs/img/naive_<clip>.jpg` at 20/50/80% of each clip. Naive = one frame, P1.5 camera model, a textured block (variance >= 100) is foreground if its residual is over 3 px, 4-connected groups of at least 4 blocks kept. No match gate, no direction consistency, no cleaning, no temporal vote.
+
+| Clip | Frames | Foreground % | What it gets right | What it gets wrong |
+|---|---|---|---|---|
+| video1 | 103, 259, 414 | 2.4, 7.6, 3.8 | cyclist, one pedestrian | most dark pedestrians missed; crosswalk stripe edges and building edges false |
+| video2 | 76, 191, 306 | 23.5, 24.8, 6.3 | both joggers partly | ground, fence and trees false (parallax and fast shake) |
+| Stairs | 69, 173, 276 | 2.4, 5.5, 8.6 | walker outline | flat jacket interior missed; railings and bricks scattered false |
+| SAL | 87, 218, 349 | 12.1, 11.1, 3.8 | walker legs and body | large false patches on the brick wall (period aliases), paving tiles |
+
+Images: `docs/img/naive_video1.jpg`, `naive_video2.jpg`, `naive_Stairs.jpg`, `naive_SAL.jpg` (half size, three frames each). P1.6 to P1.9 are judged against these.

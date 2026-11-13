@@ -16,12 +16,12 @@ Due Wed Dec 2, 2026.
 - [ ] B3 One motion vector per macroblock, computed against the PREVIOUS frame (partial: MotionEstimator.fullSearch, MotionEstimatorTest.recoversKnownShiftsIncludingNegative; wired per frame in P1.10)
 - [ ] B4 Block MAD matching, brute force or a fast search (FME is "even better") (partial: brute force done, MotionEstimatorTest.matchesTextbookOracleOnMixedContent, RESULTS P1.1; fast search P1.3)
 - [ ] B5 Search uses ONE component (Y preferred, R allowed) (partial: fullSearch takes the Y plane from ColorConv.luma; wired in P1.10)
-- [ ] B6 Background = near-zero MVs (static camera) or one constant MV (moving camera)
+- [ ] B6 Background = near-zero MVs (static camera) or one constant MV (moving camera) (partial [A/P1.5]: camera model generalises the constant MV to a homography, GlobalMotionTest, RESULTS P1.5; residual labelling in P1.6)
 - [ ] B7 Foreground regions are (a) contiguous and (b) consistent in MV direction ("important!")
 - [ ] B8 Several independently moving regions supported
 - [ ] B9 Classification from motion only, not content
 - [ ] B10 Every macroblock of every frame has a foreground/background label
-- [ ] B11 Visual demarcation like the brief's figure (green background, red/blue foreground)
+- [ ] B11 Visual demarcation like the brief's figure (green background, red/blue foreground) (partial [A/P1.5]: VizSeg tint with naive labels, docs/img/naive_*.jpg; final labels P1.9)
 
 ## C. Part 2: Compression (encoder)
 - [ ] C1 Frame split into 8x8 blocks; each inherits its 16x16 macroblock's label (partial [B/P2]: fake labels; final check after wire-up. CmpFormat.blockTypes, CmpFormatTest.blockTypeOf8x8IsItsMacroblockLabel, FrameEncoderTest.blockTypesFollowLabelsAndRegionIdsCollapseToOne)
