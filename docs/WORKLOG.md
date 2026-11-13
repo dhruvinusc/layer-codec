@@ -136,3 +136,26 @@ The VM reaches GitHub but not Maven Central or services.gradle.org.
 - [C/P3] 2026-11-13 P3.4b code done: pre-roll repaints frame 0 15 times (WARM_PAINTS) before the clock starts. Tests: PlayerTest prerollWarmsThePaintPathBeforeTheClockStarts, quitDuringPrerollEndsCleanly; fastDecode test updated for the warm-up paints. Decoder package 39/39 green. DECISIONS P3-D11, decision log P3-L12. Mac measurement queued (run 4 script again, compare whole-clip late % with run 4).
 - [C/P3] 2026-11-13 P3.5 done: overlay (d key) shipped in the P3.4 code; evidence image `docs/img/p3_video2_n2_5_overlay.png` (video2 frame 60, plain | overlay, rendered through Display.View by a sandbox scratch program; looked at it: upright, tint follows the checkerboard labels). Decision log P3-L13. Mac check queued (press d in the real window). Note: the first commit attempt timed out when the Mac went to sleep and never ran (checked: no duplicate entries, no lock); redone once.
 - [C/P3] 2026-11-13 P3.6 done: `DecoderMain.run(argv, err)` returns the exit code (0 / 2 usage / 1 file or machine); main just exits with it. Usage lists s, z, d. DecoderMainErrorsTest 10 tests (all error paths fail before any window). Full suite 168/168 green in the sandbox (includes Window A's uncommitted GlobalMotion files, compiled read-only, not staged). DECISIONS P3-D12, decision log P3-L14.
+
+### PARCEL FOR PM [C/P3, baton Nov 13]
+1. `OriginalVideo` is nested in DecoderMain to respect H3 ownership; a separate file `codec/decoder/OriginalVideo.java` would be cleaner. Approve a new file?
+2. If P3.4b does not bring whole-clip late under 2%, next lever: `-Xms1g` (or similar) in the mydecoder launchers so heap growth does not cause early GC pauses (run 4 GC logs: 8 to 106 pauses per run, max 25 ms). Small launcher change.
+3. With an original, the mp4 is read on the player thread (about 6 ms per 1080p frame); timing runs are made without it. A background reader would remove that at the cost of more code.
+4. docs/img gained 4 P3 images (about 2.7 MB). Fine for the report; flag if repo size matters.
+5. `out/p3/p34_fit_side_check.png` (about 1 MB, git-ignored) can go with the other deletable test files.
+6. Window A's `GlobalMotion.java` and `GlobalMotionTest.java` are uncommitted in the tree (their WIP); they compile and their tests pass in the sandbox. Not touched by C.
+
+### QUESTIONS FOR DHRUVIN [C/P3, baton Nov 13]
+1. Predict: at (2,5) in 1:1 side by side, where will the decoded half look worse than the original, and where the same?
+2. Why does the 1:1 zoom show artifacts that the fitted view hides?
+3. How does the overlay know which blocks are foreground without any segmentation code?
+4. Why does zoomed side by side show the same region in both halves?
+5. Why warm the paint path before starting the clock, and why is that not cheating the measurement?
+6. Stepping back 35 frames with the original open: what happens in each of the two 30-frame rings?
+7. Give the decoder an unfinished .cmp: what does it print, and how does it know?
+8. Still owed from Nov 12: step back before the cache; packed pixels and 100 back to 50; drop vs slow down; why pre-roll; why 4 workers beat 6.
+
+### MAC CHECKS QUEUED [C/P3]
+1. P3.4 + P3.5: `./gradlew build` then `./mydecoder out/p3/SAL_2_5.cmp data/SAL.mp4`: press s, z, drag, d, left arrow 35 times, q. Reply "view ok" or what looked wrong; also whether the window fits the screen.
+2. P3.4b: `bash out/p3/run4.sh` again; compare whole-clip late % with run 4 (4 workers averaged 3.5%; goal under 2%).
+3. P3.6: `./mydecoder data/SAL.mp4` should print "error: not a .cmp file ..." and exit 1 (echo $?).
