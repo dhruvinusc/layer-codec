@@ -2,6 +2,7 @@ package codec.decoder;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -51,7 +52,7 @@ class OriginalVideoTest {
     }
 
     @Test
-    void forwardSkipRingHitAndReopenAllGiveTheSameFrameAsAStraightRead() throws IOException {
+    void forwardSkipRingHitAndReopenAllGiveTheSameFrameAsAStraightRead() throws Exception {
         try (OriginalVideo o = new OriginalVideo(clip, 32, 16)) {
             assertArrayEquals(truth.get(0), o.get(0));
             assertArrayEquals(truth.get(1), o.get(1));
@@ -68,7 +69,7 @@ class OriginalVideoTest {
     }
 
     @Test
-    void framesPastTheEndOfTheMp4AreNull() throws IOException {
+    void framesPastTheEndOfTheMp4AreNull() throws Exception {
         try (OriginalVideo o = new OriginalVideo(clip, 32, 16)) {
             assertNull(o.get(60));
             assertArrayEquals(truth.get(49), o.get(49), "last frame still served after hitting the end");
@@ -79,6 +80,41 @@ class OriginalVideoTest {
     void aDifferentVideoIsRejectedBeforeAnyWindowOpens() {
         IOException e = assertThrows(IOException.class, () -> new OriginalVideo(clip, 1920, 1080));
         assertTrue(e.getMessage().contains("not the same video"), e.getMessage());
+    }
+
+    @Test
+    void theReaderThreadGetsAheadOfThePlayer() throws Exception {
+        try (OriginalVideo o = new OriginalVideo(clip, 32, 16)) {
+            o.get(0);
+            long deadline = System.nanoTime() + 5_000_000_000L;
+            while (!o.isReady(OriginalVideo.AHEAD) && System.nanoTime() < deadline) {
+                Thread.sleep(5);
+            }
+            assertTrue(o.isReady(OriginalVideo.AHEAD), "frames 1..AHEAD read without being asked");
+            assertFalse(o.isReady(OriginalVideo.AHEAD + 2), "but not further than AHEAD");
+            assertArrayEquals(truth.get(OriginalVideo.AHEAD), o.get(OriginalVideo.AHEAD));
+        }
+    }
+
+    @Test
+    void memoryStaysBoundedOverTheWholeClip() throws Exception {
+        try (OriginalVideo o = new OriginalVideo(clip, 32, 16)) {
+            for (int k = 0; k < 50; k++) {
+                assertArrayEquals(truth.get(k), o.get(k), "frame " + k);
+            }
+            assertTrue(o.peakKept() <= OriginalVideo.BEHIND + OriginalVideo.AHEAD + 1,
+                    "kept " + o.peakKept() + " frames");
+        }
+    }
+
+    @Test
+    void closeStopsTheReaderThread() throws Exception {
+        OriginalVideo o = new OriginalVideo(clip, 32, 16);
+        o.get(3);
+        o.close();
+        assertFalse(o.readerAlive(), "reader thread left running");
+        assertThrows(IllegalStateException.class, () -> o.get(4));
+        o.close();
     }
 
     private static String ffmpeg() {

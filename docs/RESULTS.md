@@ -234,3 +234,12 @@ Reading: on the three 30 fps walking/pan clips the homography explains 77 to 90%
 | SAL | 87, 218, 349 | 12.1, 11.1, 3.8 | walker legs and body | large false patches on the brick wall (period aliases), paving tiles |
 
 Images: `docs/img/naive_video1.jpg`, `naive_video2.jpg`, `naive_Stairs.jpg`, `naive_SAL.jpg` (half size, three frames each). P1.6 to P1.9 are judged against these.
+
+### P3.4 / P3.4b Mac checks, Nov 13 (D14)
+- Error path (P3.6): `./mydecoder data/SAL.mp4` prints `error: not a .cmp file (magic 0x00000014, expected LYRC)` and exits 1. PASS.
+- View (P3.4, P3.5): side by side, 1:1 zoom (same region in both halves), drag, overlay and status tags work (Dhruvin's screenshot). The grey area in the screenshot came from maximizing the window. Step back 35 frames: not yet tried.
+- Playback WITH the original mp4 (first version, original read on the player thread): SAL_2_5 60 frames dropped 27 (45%) and 8 (13%) in two runs, vs 0 drops without the original. Fixed in P3.4c (background reader); re-measure pending.
+- run4.sh repeated twice for P3.4b; neither run counts as a clean measurement:
+  - Run A (about 14:15): bench 4 workers 45.1 fps vs 57.2 on Nov 12 (same file), single core 54.4 vs 51.0 ms: the Mac was loaded (another build window was working in the device VM, which runs on the same Mac). 6b was interrupted by a key.
+  - Run B (about 14:22): bench 52.2 fps (4 workers), 64.1 (6). 4a collapsed (100 dropped, mean wait 23.5 ms). Its trace shows two whole-process freezes: a 1.36 s wait at frame 86 and a 1.84 s gap between paints at frame 147 with no decoder wait; GC max 7.7 ms. So the process itself was stopped (most likely system memory swapping on a 94% full disk), not slow decoding. 6b, the cleanest run: 0 dropped, 5 late (2.5%), +0.07%. 4b quit early with q.
+- P3.4b verdict: not decided yet. Next timing runs only on a quiet Mac (00/06 timing rule) after freeing disk (D9).

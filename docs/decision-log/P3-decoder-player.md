@@ -208,3 +208,18 @@ Owner: Window C. Oldest first. Matching technical entries: repo docs/DECISIONS.m
 - Cost or limitation: None worth noting.
 - Say it in the presentation: "Give the decoder the wrong file and it tells you why in one line, for example 'unfinished .cmp file: the encoder did not close it', before any window opens."
 - Likely professor question: What happens if the encoder crashed halfway? / Answer: The file's footer position is still zero, so the decoder prints "unfinished .cmp file" and exits with code 1. It never plays a partial file.
+
+### P3-L15: Reading the original video ahead, on its own thread
+- Date / window: Nov 13, Window C (PM approved)
+- Brief says: Output can be compared against the original (E3); play at the original frame rate (D4).
+- The problem in plain words: Our first version read each original frame from the mp4 only when the player needed it, on the same thread that keeps time. On the Mac that made playback with the original drop 13 to 45% of frames, while the same file without the original dropped none.
+- Options we considered:
+  1. Keep it, and only use side by side while paused : good no code / bad the demo looks choppy the moment someone presses play
+  2. Read the original ahead on a separate thread, keeping a few frames ready, like the decoder does : good the player only picks up frames that are already waiting / bad more code and about 70 MB more memory
+  3. Convert the whole original to frames in memory at start : good instant / bad SAL would need about 3.6 GB
+- What we chose: Option 2. A reader thread keeps up to 8 frames ahead and 30 behind (for stepping back). Stepping back further restarts the mp4 from the beginning, because an mp4 stream can only be read forward.
+- Why (plain words): The decoder already proved this pattern (P3-L2, P3-L3). Reading ahead takes the slow FFmpeg read off the clock thread, so side by side can play at full speed.
+- Proof: OriginalVideoTest (6 tests: forward, jump ahead, keep-behind hit, restart past the kept frames, end of clip, wrong video, read-ahead of exactly 8, bounded memory over the whole clip, thread stopped on close), stable over 3 repeated runs; full suite 175/175 (sandbox). Mac playback with the original: to be measured on a quiet Mac.
+- Cost or limitation: Up to 39 original frames in memory (about 320 MB at 1080p). Stepping back more than 30 frames still rereads the mp4 from the start.
+- Say it in the presentation: "The original video is read ahead on its own thread, just like our decoder, so the side-by-side comparison plays at full speed."
+- Likely professor question: Why not seek in the mp4 instead of rereading? / Answer: We read frames through an FFmpeg pipe, which only goes forward. Seeking would need restarting FFmpeg at a time stamp, and compressed video can only start cleanly at keyframes, so we kept the simple, always-correct reread for the rare long step back.

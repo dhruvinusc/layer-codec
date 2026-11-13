@@ -107,7 +107,7 @@ public final class DecoderMain {
                     FrameCache.bytesFor(h, FrameCache.DEFAULT_CAPACITY) / 1e6);
             OriginalVideo original = a.original() == null ? null : new OriginalVideo(a.original(), h.width(), h.height());
             if (original != null) {
-                System.out.printf("original : %s (side by side: press s; timing runs are made without it)%n",
+                System.out.printf("original : %s (side by side: press s; read ahead on its own thread)%n",
                         a.original().getFileName());
             }
             System.out.println("keys     : space play/pause, right step, left step back, q quit, "
@@ -167,6 +167,9 @@ public final class DecoderMain {
                     } catch (IOException ex) {
                         originalFailed = true; // keep playing the decoded video; say why once
                         System.err.println("warning  : original stopped: " + ex.getMessage());
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                        originalFailed = true;
                     }
                 }
                 d.setStatus(status);
