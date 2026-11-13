@@ -128,3 +128,8 @@ The VM reaches GitHub but not Maven Central or services.gradle.org.
 4. On SAL, a wider full search found LOWER-error matches that we still call wrong. Why can the lowest error be the wrong vector on a brick wall?
 5. What does lambda do, and when does it change the answer?
 6. Why is video1 only 31% reliable, and what happens to the unreliable blocks?
+
+## 2026-11-12/13, Window C (P3, baton)
+- [C/P3] INCIDENT Nov 12 17:28: a duplicate Window C chat was opened. To stop collisions, Dhruvin discarded the uncommitted P3.4 start (`git checkout -- Display.java`, removed `DisplayViewTest.java`). Commits were safe (latest b6987f5 from C, bfb8b16 from A). PM confirmed Nov 13 12:20 that this chat is the only Window C. P3.4 redone from this chat's own context. Decision log P3-L10.
+- [C/P3] 2026-11-13 P3.4 code done: `Display` view state (s side by side, z 1:1 zoom, d overlay, mouse-drag pan; pure `Display.View`), `Display.showLayers(...)`, `Scaler.applyPackedInto`; `DecoderMain.OriginalVideo` (VideoIO forward reads, 30-frame packed ring, reopen past the ring, size check); window two frames wide when an original is given. Tests: DisplayViewTest 10, OriginalVideoTest 3. 147/147 green (sandbox, full suite). Real-data check (scratch program in the sandbox, not committed): SAL frame 30 through Display.View, images `docs/img/p3_SAL_n2_5_side_1to1.png`, `p3_SAL_n5_2_side_1to1.png`, `p3_SAL_n2_5_overlay_1to1.png`; looked at them: halves aligned, same region at 1:1, tint follows the checkerboard labels. DECISIONS P3-D9, P3-D10; decision log P3-L11.
+- [C/P3] Mac checks queued for P3.4: run with the original, try s, z, drag, and step back past 30 frames (see BATON REPORT).

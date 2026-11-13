@@ -135,3 +135,33 @@ Owner: Window C. Oldest first. Matching technical entries: repo docs/DECISIONS.m
 - Cost or limitation: At the hardest setting the decoder has less spare speed (1.36x real time instead of 1.59x). The full-length thermal test (P3.7) will show if that is enough over a whole clip. A lesson we kept: our first three comparisons were unfair because run order mattered more than the setting, so the final test alternated the order and cooled the laptop first.
 - Say it in the presentation: "We first picked six workers because they decode fastest, but measuring the real player showed four paint on time far more often, so we changed the default."
 - Likely professor question: Why would fewer threads be better? / Answer: The laptop has only four fast cores, and painting needs CPU too. Past four workers, extra decoders just compete with the painter, so frames arrive on time but get painted late.
+
+### P3-L10: Recovering from lost work (Nov 12 incident)
+- Date / window: Nov 12 17:28 incident, recovered Nov 13, Window C
+- Brief says: Brief is silent. Project rule: one chat per window role, commit at every green checkpoint.
+- The problem in plain words: A second Window C chat was opened by mistake. While both were active, the uncommitted start of P3.4 (the new view code in Display.java and its test file) was thrown away to stop the two chats colliding on the same file. All committed work was safe.
+- Options we considered:
+  1. Leave both chats running and hope they touch different files : good no pause / bad both needed Display.java, the exact file that collided
+  2. Stop one chat, discard its uncommitted changes, redo the work from the surviving chat's own record : good one clear owner, nothing half-merged / bad an hour of rework
+  3. Try to merge the two chats' uncommitted edits : good keeps everything / bad nobody could tell whose lines were whose
+- What we chose: Option 2. The PM confirmed this chat as the only Window C, and the P3.4 code was rebuilt from this chat's own record of what it had written, then tested and committed before going further.
+- Why (plain words): Clear ownership is worth more than an hour. The rebuilt code went through the same tests, plus a check on real SAL frames.
+- Proof: commit for P3.4 (WORKLOG Nov 13); DisplayViewTest and OriginalVideoTest green; images docs/img/p3_SAL_*.
+- Cost or limitation: About an hour lost. The rule "one chat per window role" is now in the master to-do.
+- Say it in the presentation: "When two chats briefly worked on the same file, we kept one owner, threw away the half-finished copy and rebuilt it from the record, rather than guessing at a merge."
+- Likely professor question: How do you avoid losing work with several assistants? / Answer: Each window owns its own files, commits at every green test run, and only one chat may play a role at a time. The one loss we had was uncommitted work, which is why we now commit sooner.
+
+### P3-L11: Comparing with the original: side by side and 1:1 zoom
+- Date / window: Nov 13, Window C
+- Brief says: Own display code; output can be compared against the original (E1, E3). Foreground visibly cleaner than background when n1 < n2 (D5).
+- The problem in plain words: To judge quality, the grader must see our decoded frame next to the original. A 1080p frame squeezed onto a laptop screen hides the blocky artifacts that show the layer effect.
+- Options we considered:
+  1. Two separate windows : good simple / bad hard to line up, two things to arrange during a demo
+  2. One window, decoded left and original right, each scaled to fit : good easy to compare at a glance / bad details still hidden by scaling
+  3. Option 2 plus a 1:1 zoom where both halves show the same region pixel for pixel, moved by dragging : good shows real block artifacts in the same spot of both pictures / bad a little more code
+- What we chose: Option 3. Keys: s side by side, z 1:1 zoom, drag to move. The original is read from the mp4 in step with the decoded frames, upright and at true size, with its own 30-frame memory for stepping back.
+- Why (plain words): The difference between n = 2 and n = 5 is easy to miss at reduced size but obvious at 1:1. Showing the same spot in both halves makes the comparison fair.
+- Proof: DisplayViewTest (10 tests: fit, black bars, halves, 1:1 crop, pan limits, same region in both halves); OriginalVideoTest (forward, jump ahead, ring, reopen, end of clip, wrong video rejected); real SAL frame 30 rendered through the same code: docs/img/p3_SAL_n2_5_side_1to1.png and p3_SAL_n5_2_side_1to1.png.
+- Cost or limitation: The original is read on the player thread (about 6 ms per 1080p frame), so timing measurements are made without it. Stepping back more than 30 frames rereads the mp4 from the start.
+- Say it in the presentation: "Press s to put our output next to the original, then z to see both at 1:1: the same spot in each, so you can see exactly where we spent bits."
+- Likely professor question: Why does the 1:1 zoom matter? / Answer: Scaling 1080p down to a laptop screen averages pixels together and hides 8x8 block artifacts. At 1:1 every pixel is shown as it is, so the quality gap between layers is visible.

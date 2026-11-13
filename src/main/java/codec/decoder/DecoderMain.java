@@ -2,13 +2,17 @@ package codec.decoder;
 
 import codec.common.CmpFormat;
 import codec.common.Display;
+import codec.common.Types;
+import codec.common.VideoIO;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Entry point for {@code mydecoder input_video.cmp} (brief, part 3).
@@ -102,16 +106,22 @@ public final class DecoderMain {
             System.out.printf("decode   : %d workers, window %d frames, step-back cache %d frames (%.0f MB)%n",
                     workers, cap, FrameCache.DEFAULT_CAPACITY,
                     FrameCache.bytesFor(h, FrameCache.DEFAULT_CAPACITY) / 1e6);
-            if (a.original() != null) {
-                System.out.println("note     : side by side with the original arrives in P3.4; ignoring " + a.original());
+            OriginalVideo original = a.original() == null ? null : new OriginalVideo(a.original(), h.width(), h.height());
+            if (original != null) {
+                System.out.printf("original : %s (side by side: press s; timing runs are made without it)%n",
+                        a.original().getFileName());
             }
-            System.out.println("keys     : space play/pause, right step, left step back, q quit");
-            try (DecodePipeline p = new DecodePipeline(r, workers, cap)) {
+            System.out.println("keys     : space play/pause, right step, left step back, q quit, "
+                    + "s side by side, z 1:1 zoom (drag to pan), d foreground overlay");
+            try (DecodePipeline p = new DecodePipeline(r, workers, cap); OriginalVideo o = original) {
                 FrameCache cache = new FrameCache(p);
-                Display d = new Display("mydecoder  " + name, h.width(), h.height());
+                // With an original, the window is two frames wide so side by side fits; single
+                // view is then centered in it.
+                int windowW = o == null ? h.width() : 2 * h.width();
+                Display d = new Display("mydecoder  " + name, windowW, h.height());
                 try {
-                    Player player = new Player(h, r.frameCount(), source(cache), screen(d), System::nanoTime,
-                            System.out, name + " (" + workers + " workers)");
+                    Player player = new Player(h, r.frameCount(), source(cache), screen(d, h.blocksX(), o),
+                            System::nanoTime, System.out, name + " (" + workers + " workers)");
                     player.run();
                     if (a.trace() != null) {
                         try (PrintStream csv = new PrintStream(a.trace().toFile(), StandardCharsets.UTF_8)) {
@@ -141,13 +151,27 @@ public final class DecoderMain {
         };
     }
 
-    /** Adapts the Swing display to the player's screen interface. */
-    private static Player.Screen screen(Display d) {
+    /**
+     * Adapts the Swing display to the player's screen interface: the decoded frame, its block
+     * types (overlay) and, if given, the original frame with the same index (side by side).
+     */
+    private static Player.Screen screen(Display d, int blocksX, OriginalVideo original) {
         return new Player.Screen() {
+            private boolean originalFailed;
+
             @Override
             public void show(FrameCache.Entry e, String status) {
+                int[] right = null;
+                if (original != null && !originalFailed) {
+                    try {
+                        right = original.get(e.index());
+                    } catch (IOException ex) {
+                        originalFailed = true; // keep playing the decoded video; say why once
+                        System.err.println("warning  : original stopped: " + ex.getMessage());
+                    }
+                }
                 d.setStatus(status);
-                d.show(e.rgb(), e.width(), e.height());
+                d.showLayers(e.rgb(), e.types(), blocksX, right, e.width(), e.height());
             }
 
             @Override
@@ -249,5 +273,100 @@ public final class DecoderMain {
             throw new IllegalArgumentException("file not found: " + p);
         }
         return p;
+    }
+
+    /**
+     * The original mp4's frames for side by side (P3.4), read in step with the decoded frames.
+     *
+     * <p>The mp4 can only be read forward (an FFmpeg pipe, through {@link VideoIO}), so frames are
+     * read as the player moves ahead, and the last {@link #RING} are kept packed (0xRRGGBB) for
+     * stepping back. A step back past the ring reopens the clip and reads forward again from
+     * frame 0: slow for frames near the end of SAL (a few seconds), but rare. Frames come out
+     * upright and at true size, exactly like the decoder's output, so the two halves line up.
+     * Not thread-safe: only the player thread uses it.
+     */
+    static final class OriginalVideo implements AutoCloseable {
+        /** Same depth as the decoded frames' step-back cache (P3.2). */
+        static final int RING = FrameCache.DEFAULT_CAPACITY;
+
+        private final Path mp4;
+        private final Types.Frame scratch;
+        private final int[][] slots = new int[RING][];
+        private final Map<Integer, Integer> slotOf = new HashMap<>();
+        private VideoIO.Reader reader;
+        private int next;
+        private boolean ended;
+        private long inserted;
+        private int reopens;
+
+        OriginalVideo(Path mp4, int width, int height) throws IOException {
+            Types.VideoInfo info = VideoIO.probe(mp4);
+            if (info.width() != width || info.height() != height) {
+                throw new IOException("original " + mp4.getFileName() + " is " + info.width() + "x"
+                        + info.height() + " upright, but the .cmp is " + width + "x" + height
+                        + ": not the same video");
+            }
+            this.mp4 = mp4;
+            this.scratch = Types.Frame.allocate(width, height);
+            this.reader = VideoIO.open(mp4);
+        }
+
+        /** Frame k, packed, or null if the mp4 ends before frame k. */
+        int[] get(int k) throws IOException {
+            Integer slot = slotOf.get(k);
+            if (slot != null) {
+                return slots[slot];
+            }
+            if (k < next) {
+                reopen();
+            }
+            while (next <= k && !ended) {
+                if (!reader.read(scratch)) {
+                    ended = true;
+                    break;
+                }
+                int idx = next++;
+                if (idx > k - RING) {
+                    insert(idx);
+                }
+            }
+            slot = slotOf.get(k);
+            return slot == null ? null : slots[slot];
+        }
+
+        private void reopen() throws IOException {
+            reader.close();
+            reader = VideoIO.open(mp4);
+            next = 0;
+            ended = false;
+            reopens++;
+        }
+
+        private void insert(int idx) {
+            int slot = (int) (inserted++ % RING);
+            if (slots[slot] == null) {
+                slots[slot] = new int[scratch.width() * scratch.height()];
+            } else {
+                slotOf.values().remove(slot);
+            }
+            int[] dst = slots[slot];
+            int[] r = scratch.r();
+            int[] g = scratch.g();
+            int[] b = scratch.b();
+            for (int i = 0; i < dst.length; i++) {
+                dst[i] = (r[i] << 16) | (g[i] << 8) | b[i];
+            }
+            slotOf.put(idx, slot);
+        }
+
+        /** How often a step back past the ring forced a reread from frame 0 (test hook). */
+        int reopens() {
+            return reopens;
+        }
+
+        @Override
+        public void close() {
+            reader.close();
+        }
     }
 }

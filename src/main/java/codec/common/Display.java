@@ -10,12 +10,16 @@ import java.awt.GraphicsEnvironment;
 import java.awt.Rectangle;
 import java.awt.Toolkit;
 import java.awt.event.KeyAdapter;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.lang.reflect.InvocationTargetException;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -69,6 +73,25 @@ public final class Display implements AutoCloseable {
         window = new JFrame(title);
         window.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
         window.add(canvas);
+        MouseAdapter drag = new MouseAdapter() {
+            private int lastX;
+            private int lastY;
+
+            @Override
+            public void mousePressed(MouseEvent e) {
+                lastX = e.getX();
+                lastY = e.getY();
+            }
+
+            @Override
+            public void mouseDragged(MouseEvent e) {
+                canvas.pan(lastX - e.getX(), lastY - e.getY()); // the picture follows the mouse
+                lastX = e.getX();
+                lastY = e.getY();
+            }
+        };
+        canvas.addMouseListener(drag);
+        canvas.addMouseMotionListener(drag);
         window.addKeyListener(new KeyAdapter() {
             @Override
             public void keyPressed(KeyEvent e) {
@@ -81,6 +104,17 @@ public final class Display implements AutoCloseable {
                 };
                 if (k != null) {
                     keys.add(k);
+                    return;
+                }
+                // View keys change only how the current picture is drawn, so the display handles
+                // them itself, right here on the event thread (P3.4, P3.5): s side by side,
+                // z 1:1 zoom, d foreground overlay.
+                switch (e.getKeyCode()) {
+                    case KeyEvent.VK_S -> canvas.toggle(View.Toggle.SIDE_BY_SIDE);
+                    case KeyEvent.VK_Z -> canvas.toggle(View.Toggle.ZOOM);
+                    case KeyEvent.VK_D -> canvas.toggle(View.Toggle.OVERLAY);
+                    default -> {
+                    }
                 }
             }
         });
@@ -119,11 +153,23 @@ public final class Display implements AutoCloseable {
      * it is painted. Same scaler and paint path as {@link #show(Frame)}.
      */
     public void show(int[] rgb, int w, int h) {
-        if (w != width || h != height || rgb.length != w * h) {
-            throw new IllegalArgumentException("frame size does not match the window");
+        showLayers(rgb, null, 0, null, w, h);
+    }
+
+    /**
+     * Shows a decoded frame (packed 0xRRGGBB, w x h) with, optionally, its 8x8 block types for
+     * the overlay ({@code types} with {@code blocksX} blocks per row, or null) and the original
+     * frame for side by side ({@code right}, or null). How they are drawn (fit, side by side,
+     * 1:1 zoom, overlay) is the view state the viewer toggles with s, z, d and mouse drag.
+     * The arrays are read again when a view key is pressed, so the caller must not reuse them
+     * until the next call (the decoder's 30-frame rings guarantee that).
+     */
+    public void showLayers(int[] left, byte[] types, int blocksX, int[] right, int w, int h) {
+        if (left.length != w * h || (right != null && right.length != w * h)) {
+            throw new IllegalArgumentException("frame arrays do not match " + w + "x" + h);
         }
         long t0 = System.nanoTime();
-        canvas.loadPacked(rgb);
+        canvas.loadLayers(left, types, blocksX, right, w, h);
         long t1 = System.nanoTime();
         onEdt(() -> canvas.paintImmediately(0, 0, canvas.getWidth(), canvas.getHeight()));
         Toolkit.getDefaultToolkit().sync();
@@ -264,19 +310,25 @@ public final class Display implements AutoCloseable {
 
         /** Same resampling as {@link #apply}, from packed 0xRRGGBB input (bit-identical, tested). */
         void applyPacked(int[] src, int[] out) {
-            if (dw == w && dh == h) {
-                System.arraycopy(src, 0, out, 0, out.length);
-                return;
-            }
-            IntStream.range(0, dh).parallel().forEach(y -> rowPacked(src, out, y));
+            applyPackedInto(src, out, dw, 0, 0);
         }
 
-        private void rowPacked(int[] src, int[] out, int y) {
+        /** Resamples into the dw x dh rectangle at (ox, oy) of an image {@code stride} pixels wide. */
+        void applyPackedInto(int[] src, int[] out, int stride, int ox, int oy) {
+            if (dw == w && dh == h) {
+                for (int y = 0; y < h; y++) {
+                    System.arraycopy(src, y * w, out, (oy + y) * stride + ox, w);
+                }
+                return;
+            }
+            IntStream.range(0, dh).parallel().forEach(y -> rowPacked(src, out, y, (oy + y) * stride + ox));
+        }
+
+        private void rowPacked(int[] src, int[] out, int y, int o) {
             int top = y0[y] * w;
             int bot = y1[y] * w;
             int vy = wy[y];
             int uy = 256 - vy;
-            int o = y * dw;
             for (int x = 0; x < dw; x++) {
                 int a = src[top + x0[x]];
                 int c = src[top + x1[x]];
@@ -303,6 +355,115 @@ public final class Display implements AutoCloseable {
         }
     }
 
+    /**
+     * How the current picture is drawn (P3.4, P3.5). Pure logic, tested without a screen.
+     *
+     * <p>Fit: the frame is scaled to fit its area, centered, black around it. Side by side: the
+     * window is split in two halves, decoded on the left and original on the right, each fitted
+     * to its half. Zoom: no scaling, source pixels drawn 1:1 from the pan offset, so block
+     * artifacts look exactly as large as they are (scaled 1080p hides them). In side by side,
+     * both halves show the SAME region, so the two can be compared point by point. Overlay: the
+     * decoded frame's foreground 8x8 blocks are tinted red, from the block types in the file.
+     */
+    static final class View {
+        enum Toggle { SIDE_BY_SIDE, ZOOM, OVERLAY }
+
+        /** Weight of the red tint out of 8: 3/8 red, 5/8 picture, so detail stays visible. */
+        static final int TINT_EIGHTHS = 3;
+
+        boolean sideBySide;
+        boolean zoom;
+        boolean overlay;
+        int panX;
+        int panY;
+        private final Map<Long, Scaler> scalers = new HashMap<>();
+
+        void toggle(Toggle t) {
+            switch (t) {
+                case SIDE_BY_SIDE -> sideBySide = !sideBySide;
+                case ZOOM -> zoom = !zoom;
+                case OVERLAY -> overlay = !overlay;
+                default -> throw new IllegalArgumentException(t.toString());
+            }
+        }
+
+        /** Short tags for the status line, e.g. " | side by side | 1:1". */
+        String tags(boolean hasRight) {
+            StringBuilder b = new StringBuilder();
+            if (sideBySide && hasRight) {
+                b.append(" | side by side");
+            }
+            if (zoom) {
+                b.append(" | 1:1 (drag to pan)");
+            }
+            if (overlay) {
+                b.append(" | foreground in red");
+            }
+            return b.toString();
+        }
+
+        /**
+         * Draws into {@code out} (dw x dh). {@code left} is the decoded frame, already tinted if
+         * the overlay is on; {@code right} the original or null. Clamps the pan offset.
+         */
+        void render(int[] left, int[] right, int w, int h, int[] out, int dw, int dh) {
+            java.util.Arrays.fill(out, 0);
+            boolean two = sideBySide && right != null;
+            int areaW = two ? dw / 2 : dw;
+            if (zoom) {
+                panX = Math.max(0, Math.min(panX, w - areaW));
+                panY = Math.max(0, Math.min(panY, h - dh));
+                crop(left, w, h, out, dw, 0, areaW, dh);
+                if (two) {
+                    crop(right, w, h, out, dw, areaW, areaW, dh);
+                }
+            } else {
+                fit(left, w, h, out, dw, 0, areaW, dh);
+                if (two) {
+                    fit(right, w, h, out, dw, areaW, areaW, dh);
+                }
+            }
+        }
+
+        private void fit(int[] src, int w, int h, int[] out, int stride, int ax, int aw, int ah) {
+            double sc = Math.min((double) aw / w, (double) ah / h);
+            int rw = Math.max(1, Math.min(aw, (int) Math.round(w * sc)));
+            int rh = Math.max(1, Math.min(ah, (int) Math.round(h * sc)));
+            long key = ((long) w << 48) | ((long) h << 32) | ((long) rw << 16) | rh;
+            Scaler s = scalers.computeIfAbsent(key, k -> new Scaler(w, h, rw, rh));
+            s.applyPackedInto(src, out, stride, ax + (aw - rw) / 2, (ah - rh) / 2);
+        }
+
+        /** 1:1 copy of the region at the pan offset; a source smaller than the area is centered. */
+        private void crop(int[] src, int w, int h, int[] out, int stride, int ax, int aw, int ah) {
+            int cw = Math.min(aw, w);
+            int ch = Math.min(ah, h);
+            int ox = ax + (aw - cw) / 2;
+            int oy = (ah - ch) / 2;
+            for (int y = 0; y < ch; y++) {
+                System.arraycopy(src, (panY + y) * w + panX, out, (oy + y) * stride + ox, cw);
+            }
+        }
+
+        /** Copies {@code src} into {@code dst}, tinting pixels whose 8x8 block type is 1. */
+        static void tint(int[] src, byte[] types, int blocksX, int w, int h, int[] dst) {
+            for (int y = 0; y < h; y++) {
+                int rowBlocks = (y >> 3) * blocksX;
+                for (int x = 0; x < w; x++) {
+                    int i = y * w + x;
+                    int p = src[i];
+                    if (types[rowBlocks + (x >> 3)] == 1) {
+                        int r = (((p >>> 16) & 0xFF) * (8 - TINT_EIGHTHS) + 255 * TINT_EIGHTHS) >> 3;
+                        int g = (((p >>> 8) & 0xFF) * (8 - TINT_EIGHTHS)) >> 3;
+                        int b = ((p & 0xFF) * (8 - TINT_EIGHTHS)) >> 3;
+                        p = (r << 16) | (g << 8) | b;
+                    }
+                    dst[i] = p;
+                }
+            }
+        }
+    }
+
     /** Draws the display-sized image 1:1. The lock keeps a half-written frame from being drawn. */
     private static final class Canvas extends JPanel {
         private static final long serialVersionUID = 1L;
@@ -310,8 +471,17 @@ public final class Display implements AutoCloseable {
         private final transient BufferedImage image;
         private final transient int[] pixels;
         private final transient Object lock = new Object();
+        private final transient View view = new View();
         /** Status line, written by the player thread, read on the event thread. */
         transient volatile String status;
+        // Last layered frame, kept so a view key can redraw it while paused. Guarded by lock.
+        private transient int[] left;
+        private transient byte[] types;
+        private transient int blocksX;
+        private transient int[] right;
+        private transient int srcW;
+        private transient int srcH;
+        private transient int[] tinted;
 
         Canvas(Scaler scaler) {
             this.scaler = scaler;
@@ -323,24 +493,69 @@ public final class Display implements AutoCloseable {
 
         void load(Frame f) {
             synchronized (lock) {
+                left = null; // plain frame path (ProbeVideo): view keys have nothing to redraw
                 scaler.apply(f, pixels);
             }
         }
 
-        void loadPacked(int[] rgb) {
+        void loadLayers(int[] l, byte[] t, int bx, int[] r, int w, int h) {
             synchronized (lock) {
-                scaler.applyPacked(rgb, pixels);
+                left = l;
+                types = t;
+                blocksX = bx;
+                right = r;
+                srcW = w;
+                srcH = h;
+                renderLocked();
             }
+        }
+
+        private void renderLocked() {
+            int[] src = left;
+            if (view.overlay && types != null) {
+                if (tinted == null || tinted.length != left.length) {
+                    tinted = new int[left.length];
+                }
+                View.tint(left, types, blocksX, srcW, srcH, tinted);
+                src = tinted;
+            }
+            view.render(src, right, srcW, srcH, pixels, scaler.dw, scaler.dh);
+        }
+
+        /** Event thread: flips a view setting and redraws the current picture at once. */
+        void toggle(View.Toggle t) {
+            synchronized (lock) {
+                view.toggle(t);
+                if (left != null) {
+                    renderLocked();
+                }
+            }
+            repaint();
+        }
+
+        /** Event thread: moves the 1:1 view by screen pixels (= source pixels when zoomed). */
+        void pan(int dx, int dy) {
+            synchronized (lock) {
+                if (!view.zoom || left == null) {
+                    return;
+                }
+                view.panX += dx;
+                view.panY += dy;
+                renderLocked();
+            }
+            repaint();
         }
 
         @Override
         protected void paintComponent(Graphics g) {
+            String tags;
             synchronized (lock) {
                 g.drawImage(image, 0, 0, null);
+                tags = left == null ? "" : view.tags(right != null);
             }
             String s = status;
             if (s != null) {
-                drawStatus(g, s);
+                drawStatus(g, s + tags);
             }
         }
 
