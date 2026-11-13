@@ -52,7 +52,7 @@ class OriginalVideoTest {
 
     @Test
     void forwardSkipRingHitAndReopenAllGiveTheSameFrameAsAStraightRead() throws IOException {
-        try (DecoderMain.OriginalVideo o = new DecoderMain.OriginalVideo(clip, 32, 16)) {
+        try (OriginalVideo o = new OriginalVideo(clip, 32, 16)) {
             assertArrayEquals(truth.get(0), o.get(0));
             assertArrayEquals(truth.get(1), o.get(1));
             assertArrayEquals(truth.get(40), o.get(40), "jump ahead (the player dropped frames)");
@@ -69,7 +69,7 @@ class OriginalVideoTest {
 
     @Test
     void framesPastTheEndOfTheMp4AreNull() throws IOException {
-        try (DecoderMain.OriginalVideo o = new DecoderMain.OriginalVideo(clip, 32, 16)) {
+        try (OriginalVideo o = new OriginalVideo(clip, 32, 16)) {
             assertNull(o.get(60));
             assertArrayEquals(truth.get(49), o.get(49), "last frame still served after hitting the end");
         }
@@ -77,7 +77,7 @@ class OriginalVideoTest {
 
     @Test
     void aDifferentVideoIsRejectedBeforeAnyWindowOpens() {
-        IOException e = assertThrows(IOException.class, () -> new DecoderMain.OriginalVideo(clip, 1920, 1080));
+        IOException e = assertThrows(IOException.class, () -> new OriginalVideo(clip, 1920, 1080));
         assertTrue(e.getMessage().contains("not the same video"), e.getMessage());
     }
 

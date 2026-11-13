@@ -159,7 +159,7 @@ Owner: Window C. Oldest first. Matching technical entries: repo docs/DECISIONS.m
   1. Two separate windows : good simple / bad hard to line up, two things to arrange during a demo
   2. One window, decoded left and original right, each scaled to fit : good easy to compare at a glance / bad details still hidden by scaling
   3. Option 2 plus a 1:1 zoom where both halves show the same region pixel for pixel, moved by dragging : good shows real block artifacts in the same spot of both pictures / bad a little more code
-- What we chose: Option 3. Keys: s side by side, z 1:1 zoom, drag to move. The original is read from the mp4 in step with the decoded frames, upright and at true size, with its own 30-frame memory for stepping back.
+- What we chose: Option 3. Keys: s side by side, z 1:1 zoom, drag to move. The original is read from the mp4 in step with the decoded frames, upright and at true size, with its own 30-frame memory for stepping back. (Its code lives in its own file, OriginalVideo.java, since Nov 13 with PM approval.)
 - Why (plain words): The difference between n = 2 and n = 5 is easy to miss at reduced size but obvious at 1:1. Showing the same spot in both halves makes the comparison fair.
 - Proof: DisplayViewTest (10 tests: fit, black bars, halves, 1:1 crop, pan limits, same region in both halves); OriginalVideoTest (forward, jump ahead, ring, reopen, end of clip, wrong video rejected); real SAL frame 30 rendered through the same code: docs/img/p3_SAL_n2_5_side_1to1.png and p3_SAL_n5_2_side_1to1.png.
 - Cost or limitation: The original is read on the player thread (about 6 ms per 1080p frame), so timing measurements are made without it. Stepping back more than 30 frames rereads the mp4 from the start.
