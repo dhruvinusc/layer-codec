@@ -118,3 +118,18 @@ Technical source: repo `docs/DECISIONS.md` (P1-D*) and Project doc 03 (D2, D3, D
 - Cost or limitation: the effect on agreement is small (under 1 point); its value shows later in cleaner camera-motion fits and fewer false foreground blocks.
 - Say it in the presentation: "When two positions match almost equally, I prefer the one that agrees with the neighbours, which stops bricks from producing fake motion."
 - Likely professor question: Doesn't that blur real object edges? / Answer: Only when the match is nearly tied. A block on a real moving object matches its true position much better, so it still wins.
+
+### P1-L9: Only trust vectors from textured, well-matched blocks
+- Date / window: Nov 12, Window A (P1-D10; Project decision D3 step 1)
+- Brief says: classify from motion only (B9); every block needs a label (B10).
+- The problem in plain words: a vector from a flat block (sky, dark road) or from a block that found no good match is noise, and noise looks like motion.
+- Options we considered:
+  1. Use every vector : good, simple / bad, flat areas and occlusions become fake foreground.
+  2. Mark a block reliable only if it has enough texture (brightness variance at least 100, a standard deviation of 10 levels) and its best match is close (average difference at most 12 levels per pixel) : good, removes most noise / bad, video1 keeps only 31% of blocks.
+  3. Texture test only : good, simpler / bad, keeps blocks that were covered or blurred between frames.
+- What we chose: option 2. Unreliable blocks do not vote; they take their neighbours' label later (P1.7).
+- Why (plain words): the camera-motion fit and the grouping step both work better on fewer, trustworthy vectors than on many noisy ones.
+- Proof: tests in `SegmenterReliabilityTest`; RESULTS "P1.4" (31.4% to 68.5% reliable).
+- Cost or limitation: in the dark video1 most blocks are unreliable, so its labels lean more on neighbours and on the 2-of-3 frame vote.
+- Say it in the presentation: "Blocks that are too flat or that found no good match do not get a vote; they borrow their label from neighbours."
+- Likely professor question: Why variance 100 and MAD 12? / Answer: They are starting values that remove sky, road and padding while keeping textured surfaces. All thresholds are tuned once, on all four clips together, in the tuning step.

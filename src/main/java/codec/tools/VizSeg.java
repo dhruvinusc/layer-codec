@@ -90,6 +90,8 @@ public final class VizSeg {
             long agree = 0;
             long agree0 = 0;
             long worse = 0;
+            long reliableCount = 0;
+            long blocksCount = 0;
             long textured = 0;
             double msFull = 0;
             double msHier = 0;
@@ -107,6 +109,11 @@ public final class VizSeg {
                     MotionEstimator.Result hier = MotionEstimator.hierarchical(y, prevY, w, h, MotionEstimator.HierParams.DEFAULT, null, 0, 0);
                     long t2 = System.nanoTime();
                     MotionEstimator.Result hier0 = MotionEstimator.hierarchical(y, prevY, w, h, p0, null, 0, 0);
+                    boolean[] ok = codec.encoder.Segmenter.reliable(y, w, h, hier, codec.encoder.Segmenter.SegConfig.DEFAULT);
+                    for (boolean b : ok) {
+                        reliableCount += b ? 1 : 0;
+                    }
+                    blocksCount += ok.length;
                     msFull += (t1 - t0) / 1e6;
                     msHier += (t2 - t1) / 1e6;
                     int cols = w / Types.MB;
@@ -128,8 +135,8 @@ public final class VizSeg {
             }
             String name = clip.getFileName().toString();
             System.out.printf("%s R=%d pairs=%s textured=%d agree(lambda=4)=%.1f%% agree(lambda=0)=%.1f%% "
-                    + "worse-by-10%%=%.1f%% full=%.0f ms/frame hier=%.0f ms/frame%n", name, range, Arrays.toString(targets), textured,
-                    100.0 * agree / textured, 100.0 * agree0 / textured, 100.0 * worse / textured, msFull / CHECK_PAIRS, msHier / CHECK_PAIRS);
+                    + "worse-by-10%%=%.1f%% full=%.0f ms/frame hier=%.0f ms/frame reliable=%.1f%%%n", name, range, Arrays.toString(targets), textured,
+                    100.0 * agree / textured, 100.0 * agree0 / textured, 100.0 * worse / textured, msFull / CHECK_PAIRS, msHier / CHECK_PAIRS, 100.0 * reliableCount / blocksCount);
         }
     }
 

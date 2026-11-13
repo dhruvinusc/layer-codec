@@ -110,3 +110,21 @@ The VM reaches GitHub but not Maven Central or services.gradle.org.
 - [A/P1] Window A work continues in the original Window A chat (the fresh P1 chat has been idle since Nov 10).
 - [A/P1] P1.2 v1 done: VizSeg renders label tint (green background, red/blue/... per region) and MV arrows along (-dx, -dy), hand-drawn on the pixel array (ImageIO only). Options: --at, --arrows, --range, --out. Evidence docs/img/p12_mv_arrows_SAL218_video2_191.jpg: SAL background arrows uniform horizontal (pan), walker irregular, tree leaves noisy; video2 background flows, joggers nearly still. 126 tests.
 - [A/P1] P1.2 deferred parts (added as their inputs exist): `--naive` after P1.5 (needs the homography), stats CSV after P1.3 (needs fast ME over all frames), overlay mp4 later (optional).
+- [A/P1] P1.3 done (54bb5b1): hierarchical search with 3 coarse starts, +/-2 refine, extra candidates, +/-1 polish, lambda 4. Agreement vs full search on textured blocks: video2 95.8%, video1 91.7%, Stairs 91.8%, SAL 89.8% (0.2 under target; brick periodicity, see RESULTS P1.3). Sandbox 37 ms (480p) and 193 ms (1080p) per frame. VizSeg --me-check added. 131 tests.
+- [A/P1] P1.4 done: Segmenter.reliable + SegConfig (variance >= 100, MAD <= 12). Reliable: video1 31.4%, video2 59.4%, Stairs 64.3%, SAL 68.5%. 134 tests.
+- [A/P1] NEXT: P1.5 GlobalMotion (RANSAC homography, Hartley normalization, affine/translation fallback), then `VizSeg --naive` and naive overlays at 20/50/80% saved to docs/img/naive_* BEFORE any segmentation tuning; then the stats CSV (needs whole-clip ME). Open a fresh Window A chat for P1.5 (this chat is long): H1 opener plus "Resume from docs/WORKLOG.md".
+- [A/P1] Sandbox recipe note: this chat reused its own $HOME/opt; a fresh window rebuilds from the recipe above.
+
+### PARCEL FOR PM [A/P1, Nov 12 baton]
+1. `Config` is frozen, but H1 says thresholds live in one config record. P1 thresholds now live in `MotionEstimator.HierParams` and `Segmenter.SegConfig` (owned files). Accept, or unfreeze `Config` for A?
+2. P1.3 acceptance: SAL agreement 89.8% vs the 90% target (3 of 4 clips pass; real misses 4.0%). Accept as is with the brick-periodicity explanation, or require more search work in P1.9?
+3. VizSeg deviates from H1's option list for now: `--at f1,f2` instead of `--frames a:b`; `--naive`, stats CSV and overlay mp4 not yet built (need P1.5 and whole-clip ME). Overlay mp4 would pipe frames to ffmpeg from a tool (00 section 4 allows debug mp4s in tools); confirm.
+4. Dhruvin's personal files still in the repo root (2 docx, 1 xlsx); not touched (06 D8).
+
+### QUESTIONS FOR DHRUVIN [A/P1, queued during baton]
+1. P1.1 (still pending from Nov 10): predict which blocks recover a (-7, 2) shift exactly, and what full search returns on a completely flat frame.
+2. Why does a 30 px move need only a +/-8 search on the quarter-size image?
+3. Why does the hierarchical search keep 3 coarse guesses instead of 1? What was the cost?
+4. On SAL, a wider full search found LOWER-error matches that we still call wrong. Why can the lowest error be the wrong vector on a brick wall?
+5. What does lambda do, and when does it change the answer?
+6. Why is video1 only 31% reliable, and what happens to the unreliable blocks?

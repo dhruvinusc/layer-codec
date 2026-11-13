@@ -196,3 +196,15 @@ What the numbers say
 
 How the design got there (SAL agreement): single coarse winner 87.3%, plus a +/-1 polish 89.0%, plus 3 coarse starts 89.8%. Each step cost: hier 108 to 109 to 193 ms per 1080p frame (sandbox).
 Reading: 3 of 4 clips meet the 90% target; SAL is 0.2 points short. Most SAL disagreements are equally good matches on the brick wall's repeating pattern: with a wider +/-32 full search, full search finds even lower-error matches further away (6.6% "worse"), which are period-shifted aliases, not true motion. On periodic texture the lowest match error is not the true vector, which is why lambda exists and why segmentation also requires neighbours to agree (P1.6).
+
+### P1.4 reliability [A/P1] (sandbox, same 5 frame pairs as P1.3, hierarchical vectors)
+Reliable = block Y variance >= 100 and best-match MAD <= 12 (`Segmenter.SegConfig.DEFAULT`).
+
+| Clip | Reliable blocks |
+|---|---|
+| video1 | 31.4% |
+| video2 | 59.4% |
+| Stairs | 64.3% |
+| SAL | 68.5% |
+
+Reading: video1 is a night scene with large dark, flat areas, so most blocks carry no usable motion evidence (doc 05 predicted 37 to 52% textured before the match test). These blocks are not labelled from their own vector; P1.7 gives them their neighbours' label. Thresholds are revisited in P1.9 tuning.
