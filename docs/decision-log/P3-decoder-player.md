@@ -180,3 +180,17 @@ Owner: Window C. Oldest first. Matching technical entries: repo docs/DECISIONS.m
 - Cost or limitation: The decoder threads warm up separately during pre-roll; if early late frames remain, memory settings (option 3) are the next lever.
 - Say it in the presentation: "Java speeds code up after it has run a while, so we paint the first frame a few extra times while the buffer fills; the viewer sees nothing, but playback starts warm."
 - Likely professor question: Isn't that cheating the measurement? / Answer: No. The clock starts after the warm-up and every frame after that is counted. It only moves one-time start-up work to before playback, like a player buffering.
+
+### P3-L13: Showing which blocks are foreground (overlay)
+- Date / window: Nov 13, Window C
+- Brief says: Foreground visibly cleaner than background when n1 < n2 (D5); visual demarcation of foreground and background (B11, encoder side). The decoder needs nothing except the .cmp (A4).
+- The problem in plain words: When the grader sees a sharp region and a blurry one, they should be able to check that the sharp one really is what the encoder called foreground.
+- Options we considered:
+  1. Run segmentation again inside the decoder : good could show region colors / bad breaks "decoder needs only the .cmp", slow, and could disagree with the encoder
+  2. Use the block_type byte already stored for every 8x8 block in the file : good exactly what the encoder decided, no extra data, no segmentation code in the decoder / bad only foreground or background, not which region
+- What we chose: Option 2. Press d to tint foreground 8x8 blocks red (3 parts red to 5 parts picture, so detail stays visible). Works in fit, side by side and 1:1 views.
+- Why (plain words): The overlay shows the decision that actually chose the quantizer for each block, so sharpness and labels can be compared directly.
+- Proof: DisplayViewTest overlayTintsOnlyForegroundBlocks, overlayFindsTheRightBlockRowOnPaddedFrames; images docs/img/p3_video2_n2_5_overlay.png (plain left, overlay right) and docs/img/p3_SAL_n2_5_overlay_1to1.png. With the test files the tint is a checkerboard, matching their fake labels; real labels come after wire-up.
+- Cost or limitation: No per-region colors in the decoder; the encoder's VizSeg tool shows those (B11).
+- Say it in the presentation: "Press d and the decoder tints every block the encoder marked as foreground, straight from the file, so you can see that the sharp blocks are exactly the foreground ones."
+- Likely professor question: How does the overlay know what is foreground without segmentation code? / Answer: Every 8x8 block in our file starts with a block_type byte, 1 for foreground. The decoder reads that byte anyway to pick n1 or n2, and the overlay simply colors those blocks.
