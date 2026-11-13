@@ -341,7 +341,13 @@ public final class Player {
                         expectedSeconds, 100.0 * (measuredSeconds - expectedSeconds) / expectedSeconds));
             }
             s.append(String.format("decode   : mean wait for a frame %.1f ms%n", meanWaitMs));
-            s.append(line("first", first)).append(line("last ", last));
+            if (interrupted) {
+                // Paint times stop being recorded at the first pause or step, so per-window
+                // shown counts and fps would be wrong (Mac Nov 12: "shown 0 ... NaN fps").
+                s.append("windows  : first/last 100 frames not measured (paused or stepped)\n");
+            } else {
+                s.append(line("first", first)).append(line("last ", last));
+            }
             return s.toString().stripTrailing();
         }
 

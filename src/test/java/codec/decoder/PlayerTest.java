@@ -130,6 +130,8 @@ class PlayerTest {
         assertTrue(pausedAt >= 9 && pausedAt <= 11, "paused near frame 10, got " + pausedAt);
         assertTrue(r.interrupted(), "timing is flagged as not measured after a pause");
         assertTrue(w.log().contains("not measured"), w.log());
+        assertFalse(w.log().contains("NaN"), "no meaningless window numbers after a pause: " + w.log());
+        assertFalse(w.log().contains("first    :"), w.log());
     }
 
     @Test
