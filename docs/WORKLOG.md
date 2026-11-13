@@ -108,3 +108,5 @@ The VM reaches GitHub but not Maven Central or services.gradle.org.
 ## 2026-11-12 evening, Window A (P1), BATON MODE (Dhruvin away about 2 h)
 - [A/P1] STATUS at start: P1.1 done (03d33a1, full search on Y with tie-break and early exit, 39 tests at the time; RESULTS "P1.1" sandbox). P1.2 to P1.10 not started. Repo head b6987f5, decision-log P0 done (4dafeb9), P1 log missing.
 - [A/P1] Window A work continues in the original Window A chat (the fresh P1 chat has been idle since Nov 10).
+- [A/P1] P1.2 v1 done: VizSeg renders label tint (green background, red/blue/... per region) and MV arrows along (-dx, -dy), hand-drawn on the pixel array (ImageIO only). Options: --at, --arrows, --range, --out. Evidence docs/img/p12_mv_arrows_SAL218_video2_191.jpg: SAL background arrows uniform horizontal (pan), walker irregular, tree leaves noisy; video2 background flows, joggers nearly still. 126 tests.
+- [A/P1] P1.2 deferred parts (added as their inputs exist): `--naive` after P1.5 (needs the homography), stats CSV after P1.3 (needs fast ME over all frames), overlay mp4 later (optional).
