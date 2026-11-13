@@ -51,6 +51,13 @@ public final class Player {
     static final long PAUSED_POLL_NANOS = 50_000_000L;
     /** Frames decoded ahead before the clock starts (pre-roll), like any video player's buffer. */
     static final int PREROLL_FRAMES = 6;
+    /**
+     * Repaints of frame 0 during pre-roll (P3.4b). Same picture, so invisible, but they run the
+     * scaling and painting code enough times for Java to compile it (JIT) before the clock
+     * starts. Mac run 4: late frames clustered in frames 7 to 62, the first 2 s, while that code
+     * was still being compiled. About 10 ms each at 1080p, so 15 cost about 150 ms of start-up.
+     */
+    static final int WARM_PAINTS = 15;
     /** Longest pre-roll wait, so a very slow machine still starts. */
     static final long PREROLL_MAX_NANOS = 1_000_000_000L;
     /** Frames in each of the first and last windows of the thermal report (H3 P3.7). */
@@ -142,18 +149,29 @@ public final class Player {
     }
 
     /**
-     * Shows frame 0, waits until the next few frames are decoded (or 1 s passes), then starts the
+     * Shows frame 0, repaints it {@link #WARM_PAINTS} times to warm the paint path (P3.4b), waits
+     * until the next few frames are decoded (or 1 s passes in all), then starts the
      * clock with frame 0 counted as shown at that moment. Without this, window creation, the first
      * cold decode and the first paint (about half a second on the Mac, P3.3 run 1) were counted as
      * falling behind, so the first ~19 frames were dropped and every clip "played" 9 to 17% short.
      * Returns false if the viewer quit during pre-roll.
      */
     private boolean preroll() throws IOException, InterruptedException {
-        show(0, source.get(0));
+        FrameCache.Entry first = source.get(0);
+        show(0, first);
         int upTo = Math.min(frameCount - 1, PREROLL_FRAMES);
         long start = now.getAsLong();
-        while (!readyThrough(upTo) && now.getAsLong() - start < PREROLL_MAX_NANOS) {
-            if (screen.waitKey(KEY_POLL_NANOS) == Display.Key.QUIT) {
+        int warm = 0;
+        while ((warm < WARM_PAINTS || !readyThrough(upTo)) && now.getAsLong() - start < PREROLL_MAX_NANOS) {
+            Display.Key k;
+            if (warm < WARM_PAINTS) {
+                screen.show(first, status()); // warm-up repaint, not counted as a paint
+                warm++;
+                k = screen.waitKey(0);
+            } else {
+                k = screen.waitKey(KEY_POLL_NANOS);
+            }
+            if (k == Display.Key.QUIT) {
                 return false;
             }
         }

@@ -165,3 +165,18 @@ Owner: Window C. Oldest first. Matching technical entries: repo docs/DECISIONS.m
 - Cost or limitation: The original is read on the player thread (about 6 ms per 1080p frame), so timing measurements are made without it. Stepping back more than 30 frames rereads the mp4 from the start.
 - Say it in the presentation: "Press s to put our output next to the original, then z to see both at 1:1: the same spot in each, so you can see exactly where we spent bits."
 - Likely professor question: Why does the 1:1 zoom matter? / Answer: Scaling 1080p down to a laptop screen averages pixels together and hides 8x8 block artifacts. At 1:1 every pixel is shown as it is, so the quality gap between layers is visible.
+
+### P3-L12: Warming up the painting code before playback starts
+- Date / window: Nov 13, Window C
+- Brief says: Play at the original frame rate (D4).
+- The problem in plain words: In the fair Mac test, most late frames came in the first 2 seconds. Java turns frequently used code into fast machine code only after running it a while (JIT compilation), so the first paints are slow.
+- Options we considered:
+  1. Accept it and report two numbers (steady state and whole clip) : good honest, no code / bad the whole-clip number stays at 0.5 to 5.5% late
+  2. Repaint frame 0 several times during the pre-roll wait : good the viewer sees no difference (same picture), the painting code is compiled before the clock starts / bad about 150 ms longer start
+  3. Tune Java's compiler or memory settings : good could help more / bad harder to explain, outside this step
+- What we chose: Option 2, 15 repaints of frame 0 inside the existing pre-roll. Option 3 is parked for the PM.
+- Why (plain words): It costs a sixth of a second before the video starts, and it targets the exact code that was slow at the start.
+- Proof: PlayerTest prerollWarmsThePaintPathBeforeTheClockStarts (frame 0 painted 1 + 15 times, 0 drops, exact duration). The Mac measurement of whole-clip late frames is queued.
+- Cost or limitation: The decoder threads warm up separately during pre-roll; if early late frames remain, memory settings (option 3) are the next lever.
+- Say it in the presentation: "Java speeds code up after it has run a while, so we paint the first frame a few extra times while the buffer fills; the viewer sees nothing, but playback starts warm."
+- Likely professor question: Isn't that cheating the measurement? / Answer: No. The clock starts after the warm-up and every frame after that is counted. It only moves one-time start-up work to before playback, like a player buffering.

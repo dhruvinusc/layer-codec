@@ -84,8 +84,12 @@ class PlayerTest {
         assertFalse(r.interrupted());
         assertEquals(3.0, r.expectedSeconds(), 1e-9);
         assertEquals(3.0, r.measuredSeconds(), 0.004, "within 1/8 of a frame of the clip length");
-        for (int k = 0; k < 90; k++) {
-            assertEquals(k, w.painted.get(k), "frames in order, none skipped");
+        int warm = 1 + Player.WARM_PAINTS; // frame 0 shown, then repainted during pre-roll
+        for (int k = 0; k < warm; k++) {
+            assertEquals(0, w.painted.get(k), "pre-roll paints only frame 0");
+        }
+        for (int k = 1; k < 90; k++) {
+            assertEquals(k, w.painted.get(warm + k - 1), "frames in order, none skipped");
         }
         assertTrue(w.statuses.get(w.statuses.size() - 1).contains("PAUSED"), "pauses on the last frame");
         assertTrue(w.log().contains("frames 90  dropped 0"), w.log());
@@ -178,5 +182,24 @@ class PlayerTest {
         assertTrue(lines[0 + 1].startsWith("0,0.00,"), lines[1]);
         long droppedRows = java.util.Arrays.stream(lines).skip(1).filter(l -> l.endsWith(",1,0")).count();
         assertTrue(droppedRows > 0, "slow decode must show dropped rows");
+    }
+
+    @Test
+    void prerollWarmsThePaintPathBeforeTheClockStarts() throws Exception {
+        World w = new World(1_000_000L);
+        Player.Report r = w.player(40).run();
+        long zeros = w.painted.stream().filter(k -> k == 0).count();
+        assertEquals(1 + Player.WARM_PAINTS, zeros, "frame 0 painted once plus the warm-up repaints");
+        assertEquals(0, r.dropped(), "warm-up time is before the clock, so it causes no drops");
+        assertEquals(40.0 / 30, r.measuredSeconds(), 0.004);
+    }
+
+    @Test
+    void quitDuringPrerollEndsCleanly() throws Exception {
+        World w = new World(1_000_000L);
+        w.keys.put(w.now, Display.Key.QUIT);
+        Player.Report r = w.player(40).run();
+        assertTrue(r.interrupted() || Double.isNaN(r.measuredSeconds()), "nothing measured");
+        assertTrue(w.painted.size() <= 2, "stopped during pre-roll");
     }
 }
