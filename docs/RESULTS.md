@@ -163,3 +163,22 @@ What the numbers say
 | 6 | 2nd | 0 | 0 | 6.67 s vs 6.67 s (+0.08%) | 1.5 ms | 100 shown, 30.0 fps | 100 shown, 30.0 fps |
 
 Reading: the 4-worker run collapsed in its second half (a few very long waits: about 4 s of waiting over 106 paints, almost all in frames 100..199), while 6 workers on the same frames were perfect. The bench says 4 workers decode this file at about 60 fps, so this is a stall (disk, memory clean-up or CPU slowdown), not decode speed. Run order matches the earlier pattern: in every SAL pair so far, the FIRST run was the worse one, whatever its worker count. Runs 1 to 3 therefore do not compare 4 and 6 fairly. Run 4 (`out/p3/run4.sh`) cools down first, alternates 4,6,6,4 with pauses, and logs per-frame waits and Java memory clean-up (GC) pauses. The default stays 4 only provisionally (P3-D8) until run 4.
+
+### P3.3 Player, Mac run 4 (Nov 12): fair 4 vs 6 workers, SAL first 200 frames (2,5)
+`out/p3/run4.sh`: 60 s cool-down, order 4,6,6,4, 20 s pauses, per-frame traces `out/p3/r4_trace_*.csv`, GC logs `out/p3/r4_gc_*.log`. Plus one extra 4-worker run straight after re-encoding the file (the run 3 situation).
+
+| Run | Workers | Dropped | Late (> 16.7 ms) | Played vs clip | Late in frames 100..199 | Worst lateness | Longest gap between paints | Wait p99 / max |
+|---|---|---|---|---|---|---|---|---|
+| extra, right after encode | 4 | 0 | 9 (4.5%) | +0.08% | 0 | | | |
+| 4a | 4 | 0 | 11 (5.5%) | +0.07% | 1 | 46.2 ms (frame 7) | 74.2 ms | 19.4 / 27.3 ms |
+| 6a | 6 | 0 | 17 (8.5%) | +0.13% | 8 | 41.1 ms | 51.0 ms | 18.9 / 18.9 ms |
+| 6b | 6 | 0 | 6 (3.0%) | +0.07% | 2 | 41.4 ms | 51.4 ms | 7.5 / 17.4 ms |
+| 4b | 4 | 0 | 1 (0.5%) | +0.07% | 0 | 37.6 ms (frame 7) | 65.7 ms | 4.3 / 4.5 ms |
+
+Bench on the same 200 frames: serial 51.0 ms/frame; 4 workers 17.5 ms = 57.2 fps (1.91x real time); 6 workers 14.7 ms = 67.9 fps (2.26x). Thermal: no warning recorded.
+
+What the numbers say
+- Drop counting checked against the traces: every frame is either painted or flagged dropped, none is neither or both. Zero drops in all five runs is real. A frame is dropped only if it is already a full period behind when the player picks it; the worst frame here finished 46 ms after its deadline but was about 13 ms late when chosen, so it counts as late, not dropped.
+- 4 vs 6, fair order: 4 workers averaged 3.5% late (0.5 to 5.5%), 6 workers 5.75% (3.0 to 8.5%); in the steady part (frames 100..199) 4 workers had 0 to 1 late frames, 6 workers 2 to 8. Both 0 drops, both on time to 0.13%. 4 workers stay the default (P3-D8 confirmed); 6 decode faster in the bench but the extra speed is not needed.
+- Late frames cluster in the first 2 seconds (frames 7 to 62): Java compiles the hot code while it runs (JIT warm-up). Steady-state 1080p meets the H3 target (under 2% late, zero drops); counted over the whole clip including warm-up it is 0.5 to 5.5%.
+- Run 3's collapse did not come back, even straight after re-encoding the 362 MB file. GC pauses are small (largest 25 ms, total 33 to 82 ms per run), so memory clean-up is not the cause. Most likely a one-off disk stall on a 94% full disk; freeing disk (06 item D9) also lowers the demo risk.
