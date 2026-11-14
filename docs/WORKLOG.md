@@ -177,3 +177,5 @@ The VM reaches GitHub but not Maven Central or services.gradle.org.
 - [A/P1] Evidence: RESULTS "P1.6" (per-step foreground table, walker diagnostics), `docs/img/p16_*.jpg` checked by eye. DECISIONS P1-D15..D18, decision log P1-L13..L15.
 - [A/P1] Mac connection dropped twice on Nov 13 (sleep). Keep `caffeinate -dims` running.
 - [A/P1] NEXT: Stairs f69 miss (time box 2 h, else known limit), then P1.7 fill.
+- [A/P1] 2026-11-14 noon: removed 3 stale git locks left by my P1.6 commit (HEAD.lock, next-index-15.lock, objects/maintenance.lock); pgrep showed no git running; Dhruvin said "clear locks"; PM standing permission from now on.
+- [A/P1] Stairs f69 miss: known limit (RESULTS "P1.6 known limit", P1-D19, P1-L16). P1.7 fill done (vote + hole fill, dilation off): `Segmenter.fill`, `SegmenterFillTest` 6 tests, 191/191; RESULTS "P1.7 fill", docs/img/p17_*.jpg, P1-D20, P1-L17.

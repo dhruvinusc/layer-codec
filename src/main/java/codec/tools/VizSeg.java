@@ -80,7 +80,7 @@ public final class VizSeg {
                         GlobalMotion.Model cam = GlobalMotion.fit(me.field(), ok, p.width(), p.height(), GlobalMotion.GmConfig.DEFAULT);
                         labels = o.naive
                                 ? Segmenter.naive(y, p.width(), p.height(), me.field(), cam, Segmenter.SegConfig.DEFAULT)
-                                : Segmenter.group(me.field(), Segmenter.foregroundEligible(y, prevY, p.width(), p.height(), me, cam, Segmenter.SegConfig.DEFAULT), cam, Segmenter.SegConfig.DEFAULT);
+                                : Segmenter.fill(Segmenter.group(me.field(), Segmenter.foregroundEligible(y, prevY, p.width(), p.height(), me, cam, Segmenter.SegConfig.DEFAULT), cam, Segmenter.SegConfig.DEFAULT), Segmenter.SegConfig.DEFAULT);
                         extra = String.format(", %s inliers %.2f, foreground %.1f%%", cam.kind(), cam.inlierRatio(), 100.0 * foreground(labels) / nb);
                     }
                     int[] rgb = render(p, labels, o.arrows ? me.field() : null);

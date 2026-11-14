@@ -30,6 +30,8 @@ public final class Segmenter {
      *                       camera's vector is worse than its own best match by at most this many levels
      *                       per pixel ...
      * @param camSlackRel    ... or by at most this share of its own best match error
+     * @param camWindow      search radius in pixels around the rounded camera vector for that test
+     *                       (0 = the rounded vector only; 1 = its 3x3 neighbourhood)
      * @param resPx          an eligible block whose residual (vector minus camera) is longer than this
      *                       is a foreground candidate
      * @param consPx         two neighbouring candidates join one region if their residuals differ by at
@@ -40,11 +42,12 @@ public final class Segmenter {
      * @param minRegionFrac  ... and at least this share of all macroblocks (0.002 = 16 blocks at 1080p)
      * @param maxSpreadPx    a region whose residuals spread more than this (median distance from the
      *                       region's median residual) is noise, not one moving object
+     * @param dilate         P1.7: grow every region by one block (4-neighbours) after filling
      */
-    public record SegConfig(int minTextureVar, int maxMatchMad, int candMinVar, double camSlackMad, double camSlackRel, double resPx, double consPx,
+    public record SegConfig(int minTextureVar, int maxMatchMad, int candMinVar, double camSlackMad, double camSlackRel, int camWindow, double resPx, double consPx,
                             double consMinMag, double consAngleDeg, int minRegionBlocks,
-                            double minRegionFrac, double maxSpreadPx) {
-        public static final SegConfig DEFAULT = new SegConfig(100, 12, 20, 1.0, 0.15, 2.5, 2.0, 4.0, 30.0, 4, 0.002, 3.0);
+                            double minRegionFrac, double maxSpreadPx, boolean dilate) {
+        public static final SegConfig DEFAULT = new SegConfig(100, 12, 20, 1.0, 0.15, 1, 2.5, 2.0, 4.0, 30.0, 4, 0.002, 3.0, false);
     }
 
     /**
@@ -127,7 +130,7 @@ public final class Segmenter {
      * vector. On a repeating brick wall the search can lock onto a whole patch of wrong but mutually
      * consistent vectors; the camera's vector matches those blocks about as well, so they are
      * background. A walker's blocks match badly at the camera's vector, so they stay candidates.
-     * The camera vector is rounded and the best of its 3x3 neighbourhood is used (sub-pixel slack).
+     * The camera vector is rounded; with camWindow 1 the best of its 3x3 neighbourhood is used.
      */
     public static boolean[] cameraExplains(int[] cur, int[] prev, int w, int h, MotionEstimator.Result me,
                                            GlobalMotion.Model cam, SegConfig c) {
@@ -144,8 +147,9 @@ public final class Segmenter {
             int slack = (int) Math.max(c.camSlackMad() * Types.MB * Types.MB, c.camSlackRel() * best);
             int limit = best + slack;
             boolean explained = false;
-            for (int oy = -1; oy <= 1 && !explained; oy++) {
-                for (int ox = -1; ox <= 1 && !explained; ox++) {
+            int r = c.camWindow();
+            for (int oy = -r; oy <= r && !explained; oy++) {
+                for (int ox = -r; ox <= r && !explained; ox++) {
                     int px = x0 + vx + ox;
                     int py = y0 + vy + oy;
                     if (px >= 0 && py >= 0 && px + Types.MB <= w && py + Types.MB <= h) {
@@ -276,6 +280,126 @@ public final class Segmenter {
         return sorted.length % 2 == 1 ? sorted[m] : (sorted[m - 1] + sorted[m]) / 2.0;
     }
 
+
+    /**
+     * P1.7 clean-up, all on the label grid (no new motion evidence):
+     * <ol>
+     * <li>a background block with at least 3 of its 4 neighbours in the same region joins it (flat
+     *     patches on a jacket, blocks the camera test or the gate removed inside a person);</li>
+     * <li>a background pocket that does not touch the frame border, is bordered by exactly one
+     *     region and is no larger than that region is filled with it (holes inside a person);</li>
+     * <li>optionally, every region grows by one block ({@code dilate}).</li>
+     * </ol>
+     * Returns new labels; the input is not changed. Deterministic (scan order, copies per pass).
+     */
+    public static Labels fill(Labels in, SegConfig c) {
+        int cols = in.cols();
+        int rows = in.rows();
+        byte[] id = vote(in.id(), cols, rows);
+        fillHoles(id, cols, rows);
+        if (c.dilate()) {
+            id = dilate(id, cols, rows);
+        }
+        return new Labels(cols, rows, id);
+    }
+
+    /** Step 1: 3-of-4 neighbour vote, computed on a copy so the result does not depend on scan order. */
+    static byte[] vote(byte[] src, int cols, int rows) {
+        byte[] out = src.clone();
+        for (int i = 0; i < src.length; i++) {
+            if (src[i] != 0) {
+                continue;
+            }
+            int cx = i % cols;
+            int cy = i / cols;
+            byte[] nb = {cx > 0 ? src[i - 1] : 0, cx < cols - 1 ? src[i + 1] : 0,
+                         cy > 0 ? src[i - cols] : 0, cy < rows - 1 ? src[i + cols] : 0};
+            for (int a = 0; a < 4; a++) {
+                if (nb[a] == 0) {
+                    continue;
+                }
+                int same = 0;
+                for (int b = 0; b < 4; b++) {
+                    same += nb[b] == nb[a] ? 1 : 0;
+                }
+                if (same >= 3) {
+                    out[i] = nb[a];
+                    break;
+                }
+            }
+        }
+        return out;
+    }
+
+    /** Step 2: fill background pockets enclosed by one region and no larger than it. */
+    static void fillHoles(byte[] id, int cols, int rows) {
+        int n = id.length;
+        int[] regionSize = new int[256];
+        for (byte b : id) {
+            regionSize[b & 0xFF]++;
+        }
+        boolean[] seen = new boolean[n];
+        int[] queue = new int[n];
+        for (int s = 0; s < n; s++) {
+            if (id[s] != 0 || seen[s]) {
+                continue;
+            }
+            int head = 0;
+            int tail = 0;
+            queue[tail++] = s;
+            seen[s] = true;
+            boolean border = false;
+            int owner = -1;                      // -1 none yet, -2 several regions
+            while (head < tail) {
+                int i = queue[head++];
+                int cx = i % cols;
+                int cy = i / cols;
+                border |= cx == 0 || cy == 0 || cx == cols - 1 || cy == rows - 1;
+                int[] nb = {cx > 0 ? i - 1 : -1, cx < cols - 1 ? i + 1 : -1, cy > 0 ? i - cols : -1, cy < rows - 1 ? i + cols : -1};
+                for (int j : nb) {
+                    if (j < 0) {
+                        continue;
+                    }
+                    if (id[j] == 0) {
+                        if (!seen[j]) {
+                            seen[j] = true;
+                            queue[tail++] = j;
+                        }
+                    } else {
+                        int r = id[j] & 0xFF;
+                        owner = owner == -1 || owner == r ? r : -2;
+                    }
+                }
+            }
+            if (!border && owner > 0 && tail <= regionSize[owner]) {
+                for (int k = 0; k < tail; k++) {
+                    id[queue[k]] = (byte) owner;
+                }
+            }
+        }
+    }
+
+    /** Step 3: one-block 4-neighbour dilation; where two regions compete, the lower id wins. */
+    static byte[] dilate(byte[] src, int cols, int rows) {
+        byte[] out = src.clone();
+        for (int i = 0; i < src.length; i++) {
+            if (src[i] != 0) {
+                continue;
+            }
+            int cx = i % cols;
+            int cy = i / cols;
+            int best = 0;
+            int[] nb = {cx > 0 ? i - 1 : -1, cx < cols - 1 ? i + 1 : -1, cy > 0 ? i - cols : -1, cy < rows - 1 ? i + cols : -1};
+            for (int j : nb) {
+                int r = j >= 0 ? src[j] & 0xFF : 0;
+                if (r != 0 && (best == 0 || r < best)) {
+                    best = r;
+                }
+            }
+            out[i] = (byte) best;
+        }
+        return out;
+    }
 
     /**
      * 4-connected components of {@code cand} in fixed scan order (breadth first, int queue). Groups

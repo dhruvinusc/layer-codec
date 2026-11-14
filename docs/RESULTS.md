@@ -261,3 +261,26 @@ Foreground % per frame (three frames per clip), as each change was added:
 Region-level checks (diagnostic on the walker's block rectangle): Stairs f173, walker blocks kept: A 0, C 222 of 559. SAL f218, walker blocks kept with robust spread cap 2 px: 0; cap 3 px: 88 (torso residual about 9 px, legs 16 to 25 px, real articulated motion).
 
 Reading (images `docs/img/p16_*.jpg`, checked by eye): step A removed most false foreground but also the walkers, because their flat clothing failed the texture test (Stairs f173: 225 of 559 walker blocks textured, 539 well matched). B and C bring the walkers back. D removes 15 to 44% of what remains on SAL and video1 (brick and stripe aliases that match the camera's vector as well as their own). Result vs naive: SAL brick-wall false foreground down from 11 to 12% to 1 to 4%, walker found in all three SAL frames; video2 halved; Stairs walker found in f173 and f276. Remaining: Stairs f69 walker missed (small and far, see P1.6 note below), some brick patches on SAL, video2 trees and fence (parallax).
+
+P1.6 known limit [A/P1, Nov 14]: Stairs frame 69 (walker far away at the top of the stairs) stays unlabelled. His residual is a clean, consistent (2, -1) px, about 2.2 px, while the camera fit error is 0.70 px and block matching works in whole pixels. Experiments on all 12 sheet frames (foreground %):
+
+| Setting | Stairs f69 | video1 (3 frames) | video2 (3 frames) | SAL (3 frames) |
+|---|---|---|---|---|
+| Final P1.6 (camera window 1 px, residual > 2.5 px) | 0.0 | 3.1 / 3.5 / 1.9 | 12.5 / 11.3 / 3.4 | 1.9 / 3.7 / 1.2 |
+| Residual > 1.5 px | 0.0 | 3.6 / 5.6 / 2.1 | 15.5 / 15.7 / 6.5 | 1.9 / 3.7 / 1.2 |
+| Camera window 0, residual > 1.5 px | 0.6 | 5.4 / 8.3 / 4.9 | 19.4 / 20.1 / 12.1 | 3.4 / 3.8 / 2.7 |
+| Threshold max(1.5, 2.5 x camera error) | 0.0 | 3.1 / 3.2 / 1.2 | 11.6 / 8.0 / 3.4 | 1.9 / 3.7 / 1.2 |
+
+Recovering a quarter of that walker would nearly double false foreground on video2. Decision (time box 2 h, used 45 min): accept as a known limit. Fix for later (out of P1 scope): accumulate residual over several frames, so a 2 px/frame mover shows 6 px over three frames.
+
+### P1.7 fill [A/P1] (sandbox; same 12 frames)
+`Segmenter.fill`: (1) a background block with >= 3 of 4 neighbours in one region joins it; (2) a background pocket not touching the border, bordered by one region and no larger than it, is filled; (3) optional 1-block dilation.
+
+| Clip | After P1.6 grouping | + vote and hole fill (kept) | + 1-block dilation (rejected) |
+|---|---|---|---|
+| video1 | 3.1 / 3.5 / 1.9 | 3.1 / 3.6 / 1.9 | 8.0 / 6.8 / 4.7 |
+| video2 | 12.5 / 11.3 / 3.4 | 12.7 / 11.9 / 3.5 | 25.2 / 23.3 / 7.7 |
+| Stairs | 0.0 / 3.0 / 1.9 | 0.0 / 3.4 / 2.0 | 0.0 / 4.7 / 3.5 |
+| SAL | 1.9 / 3.7 / 1.2 | 2.0 / 3.9 / 1.2 | 3.2 / 6.6 / 2.0 |
+
+Reading (`docs/img/p17_*.jpg`, checked by eye): vote and hole fill add 0 to 0.6 points and make the Stairs f173 torso solid instead of speckled. Dilation roughly doubles foreground on every clip because it grows the false regions as much as the people, so it stays off (`SegConfig.dilate = false`). Walkers' dark trousers on Stairs remain background (flat, no texture, see P1.6 known limits).

@@ -221,3 +221,34 @@ Technical source: repo `docs/DECISIONS.md` (P1-D*) and Project doc 03 (D2, D3, D
 - Cost or limitation: an object moving slowly over a repeating texture could be called background; small brick patches still survive on SAL.
 - Say it in the presentation: "Before I call a block foreground, I check whether the background's motion would explain it just as well. If it would, there is no evidence it moved on its own."
 - Likely professor question: Is that still classification from motion only? / Answer: Yes. It compares two motion hypotheses for the same block using the match error, the same quantity the motion search itself uses. No colour, shape or content rules.
+
+### P1-L16: Accepting that a slow, distant walker can be missed
+- Date / window: Nov 14, Window A (P1-D19; PM time box 2 h)
+- Brief says: every macroblock of every frame gets a label (B10); foreground is what moves differently from the background (B6, B7).
+- The problem in plain words: at the top of the Stairs clip the walker is small and far, and moves only about 2 px per frame relative to the camera. Our camera model itself is accurate to about 0.7 px, and block matching measures in whole pixels.
+- Options we considered:
+  1. Lower the motion threshold to 1.5 px : good, simple / bad, still found none of him, and video2 false foreground rose by up to 3 points.
+  2. Also make the camera test exact (no 1 px slack) : good, recovered about a quarter of him / bad, video2 false foreground nearly doubled (6.5% to 12.1% on one frame).
+  3. Threshold scaled to each frame's camera-fit error : good, principled / bad, still missed him.
+  4. Accept the miss and document it : good, keeps the other three clips clean / bad, the first seconds of Stairs show him as background.
+- What we chose: option 4.
+- Why (plain words): 2 px of motion is barely above our measurement noise, so any per-frame rule that catches him also catches noise everywhere else. False foreground costs bits on every clip; this miss costs quality on a few seconds of one.
+- Proof: RESULTS "P1.6 known limit" (table of all four experiments on 12 frames).
+- Cost or limitation: the distant walker in early Stairs frames is compressed with the background quantizer.
+- Say it in the presentation: "When the walker is far away he moves only two pixels a frame against the camera, which is at the edge of what block matching can measure, so I accepted that miss rather than flood the other clips with false foreground."
+- Likely professor question: How would you fix it with more time? / Answer: Add up each block's leftover motion over three or four frames. A 2 px per frame mover becomes 6 to 8 px, well above the noise, while random noise does not add up.
+
+### P1-L17: Filling holes inside a moving person, but not growing regions
+- Date / window: Nov 14, Window A (P1-D20; Project decision D3 step 5)
+- Brief says: every macroblock gets a label (B10); foreground regions are contiguous (B7).
+- The problem in plain words: a walker's region has holes where his clothing is flat or a block failed a test. Those holes would be compressed with the coarse background quantizer, which looks like blotches on a person.
+- Options we considered:
+  1. Leave labels as grouped : good, no assumptions / bad, speckled people.
+  2. Fill: a block surrounded on 3 of 4 sides by one region joins it, and pockets fully enclosed by one region are filled : good, closes holes without new evidence / bad, a real gap inside an object (between arm and body) could be filled.
+  3. Also grow every region by one block : good, covers object edges / bad, foreground doubled on every clip because false regions grow too.
+- What we chose: option 2; option 3 is built but switched off.
+- Why (plain words): filling only changes blocks that are already surrounded by one object, so it cannot create new false regions. Growing does, and false foreground costs bits everywhere.
+- Proof: RESULTS "P1.7 fill" (fill +0 to 0.6 points; dilation e.g. video2 12.7% to 25.2%); `SegmenterFillTest` (6 tests: enclosed hole, notch, two-region pocket, border pocket, oversized pocket, dilation).
+- Cost or limitation: flat dark trousers that are not enclosed (they reach the stairs below) stay background.
+- Say it in the presentation: "If a block is surrounded by the walker, it is part of the walker. That rule fills the holes but never invents a new object."
+- Likely professor question: Why not dilate to be safe, since false foreground only costs bits? / Answer: We measured it: dilation doubled foreground on every clip, mostly around false regions. That doubles the bits spent on the wrong blocks for a small gain at object edges.
