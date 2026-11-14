@@ -202,4 +202,32 @@ class PlayerTest {
         assertTrue(r.interrupted() || Double.isNaN(r.measuredSeconds()), "nothing measured");
         assertTrue(w.painted.size() <= 2, "stopped during pre-roll");
     }
+
+    @Test
+    void replayAfterTheEndDoesNotSpoilTheTrace() throws Exception {
+        // Nov 14: space at the end replays and re-anchors the clock; the trace must still describe
+        // the first pass (deadlines from 0, paint times near their deadlines, first-pass flags).
+        World w = new World(50_000_000L); // slow: the first pass drops and is late
+        long start = w.now;
+        w.keys.put(start + 5_000_000_000L, Display.Key.TOGGLE_PLAY); // after the end: replay
+        w.keys.put(start + 5_500_000_000L, Display.Key.QUIT);
+        Player p = w.player(60);
+        Player.Report first = p.report(); // before run: nothing yet
+        assertEquals(0, first.dropped());
+        p.run();
+        ByteArrayOutputStream b = new ByteArrayOutputStream();
+        p.writeTrace(new PrintStream(b, true, StandardCharsets.UTF_8));
+        String[] lines = b.toString(StandardCharsets.UTF_8).split("\\R");
+        int droppedRows = 0;
+        for (int k = 1; k < lines.length; k++) {
+            String[] f = lines[k].split(",", -1);
+            if (!f[2].isEmpty()) {
+                double lateBy = Double.parseDouble(f[2]) - Double.parseDouble(f[1]);
+                assertTrue(lateBy > -1 && lateBy < 200, "frame " + f[0] + " painted " + lateBy + " ms from its deadline");
+            }
+            droppedRows += f[4].equals("1") ? 1 : 0;
+        }
+        assertTrue(droppedRows > 0, "the slow first pass dropped frames");
+        assertTrue(w.log().contains("dropped"), w.log());
+    }
 }

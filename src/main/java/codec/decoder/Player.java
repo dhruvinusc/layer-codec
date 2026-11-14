@@ -83,6 +83,8 @@ public final class Player {
     private boolean reported;
     private long t0;
     private int i0;
+    /** Clock anchor of the FIRST pass, kept for the trace; later anchors (resume, replay) do not change it. */
+    private long passT0;
     private int droppedCount;
     private int lateCount;
     private int paints;
@@ -176,6 +178,7 @@ public final class Player {
             }
         }
         anchor(0);
+        passT0 = t0;
         shownAt[0] = t0; // frame 0 has been on screen since before t0; its slot ends at t0 + period
         return true;
     }
@@ -205,18 +208,24 @@ public final class Player {
         long behind = (now.getAsLong() - t0) * periodDen / periodNum;
         int target = (int) Math.min(frameCount - 1, Math.max(next, i0 + behind));
         for (int d = next; d < target; d++) {
-            dropped[d] = true;
+            if (!interrupted) {
+                dropped[d] = true; // per-frame record: first pass only (trace, report windows)
+            }
             droppedCount++;
         }
         long w0 = now.getAsLong();
         FrameCache.Entry e = source.get(target);
         long waited = now.getAsLong() - w0;
         waitNanos += waited;
-        waitedNanos[target] = waited;
+        if (!interrupted) {
+            waitedNanos[target] = waited;
+        }
         long shownTime = show(target, e);
         long lateBy = shownTime - due(target);
         if (lateBy > periodNanos() / 2) {
-            late[target] = true;
+            if (!interrupted) {
+                late[target] = true;
+            }
             lateCount++;
         }
         return screen.waitKey(0);
@@ -284,12 +293,16 @@ public final class Player {
      * first pass with its deadline and paint time relative to the clock start, how long the player
      * waited for the decoder, and whether it was dropped or late. Shows whether lost time comes in
      * a few long stalls (disk, memory clean-up) or many small ones (CPU).
+     *
+     * <p>Only the first uninterrupted pass is recorded and its own clock anchor is used: a replay
+     * (space at the end) re-anchors the clock, which made the Nov 14 full-length traces show
+     * frames 19 s "early". The on-screen counters still count every pass.
      */
     void writeTrace(PrintStream csv) {
         csv.println("frame,due_ms,shown_ms,wait_ms,dropped,late");
         for (int i = 0; i < frameCount; i++) {
-            long d = due(i) - t0;
-            String shownMs = shownAt[i] > 0 ? String.format("%.2f", (shownAt[i] - t0) / 1e6) : "";
+            long d = (long) i * periodNum / periodDen;
+            String shownMs = shownAt[i] > 0 ? String.format("%.2f", (shownAt[i] - passT0) / 1e6) : "";
             csv.printf("%d,%.2f,%s,%.2f,%d,%d%n", i, d / 1e6, shownMs, waitedNanos[i] / 1e6,
                     dropped[i] ? 1 : 0, late[i] ? 1 : 0);
         }
