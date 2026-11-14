@@ -201,3 +201,11 @@ One command does all of them: `bash out/p3/quiet_run.sh` (git-ignored script, ab
 - [C/P3] Disk: 17 GB free after the quiet run. Deletable by Dhruvin now that the results are read: out/p3/SAL_full_0_0.cmp (1.8 GB), SAL_full_2_5.cmp (781 MB), SAL_200_2_5.cmp (345 MB), SAL_0_0.cmp (285 MB). Keep SAL_2_5, SAL_5_2, SAL_2_5_rle, video2_2_5, video2_5_2, video2_2_5_rle for demos and screenshots.
 - [C/P3] 2026-11-14 P3 signed off by PM. Paper task: presentation/demo_script_decoder.md (warm-up first; side by side (2,5) and (5,2), 1:1, overlay, step back, bench line; what to say and numbers, re-check after wire-up). Best 4 slide images: docs/img/p3_SAL_n2_5_side_1to1.png, p3_SAL_n5_2_side_1to1.png, p3_video2_n2_5_overlay.png, p29_SAL_n1_7_crop1to1.png. Window C idle until P3.R after wire-up (queued: trace first-pass-only fix).
 - [C/P3] 2026-11-14 Queued trace fix done (P3-D15): Player trace + late/dropped/wait arrays first pass only, own anchor. PlayerTest replayAfterTheEndDoesNotSpoilTheTrace. Decoder package 56/56 (sandbox, nice'd).
+- [A/P1] 2026-11-14 P1.9 step 2: parallax filter built + `SegmenterParallaxTest` (4), default OFF; 212/212. RESULTS "P1.9 step 2", P1-D24, P1-L20 (pending). Note: during this session ME ran 111 to 167 ms per 480p frame vs 37 earlier (Mac busy elsewhere); sandbox timings from this session are not usable.
+
+### DECISION REQUEST [A/P1, Nov 14]: parallax filter on or off by default
+- What: `SegConfig.parallaxDeg` 0 (off, current) or 30 (on). Drops regions whose leftover motion points along the camera's flow while the camera moves >= 4 px per frame.
+- Why: it removes the largest false-foreground class on video2 (whole clip 6.95% -> 4.15%; fence and trees gone, joggers unchanged) and SAL's last brick patch.
+- Against: it deletes real movers going against the camera's direction (part of one pedestrian on video1 f9; video1 empty frames 16 -> 51; two unit tests). It reverses 03 D3's "lean foreground when unsure".
+- Options: (A) keep OFF (recommended: matches D3; the cost is bits, not visible blur); (B) ON at 30 degrees; (C) ON only for clips where the camera moves fast (adds a rule, not recommended).
+- Impact either way: one constant; labels and .cmp change only if ON. P1.10 and wire-up do not wait on it.

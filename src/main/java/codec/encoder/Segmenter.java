@@ -43,11 +43,17 @@ public final class Segmenter {
      * @param maxSpreadPx    a region whose residuals spread more than this (median distance from the
      *                       region's median residual) is noise, not one moving object
      * @param dilate         P1.7: grow every region by one block (4-neighbours) after filling
+     * @param parallaxDeg    P1.9: drop a region whose median residual points within this angle of the
+     *                       camera's own vector at the region (0 = off) ...
+     * @param parallaxMinCam ... when that camera vector is at least this long: near background under a
+     *                       moving camera slides further the same way (parallax), people tracked by the
+     *                       camera move against the flow
      */
     public record SegConfig(int minTextureVar, int maxMatchMad, int candMinVar, double camSlackMad, double camSlackRel, int camWindow, double resPx, double consPx,
                             double consMinMag, double consAngleDeg, int minRegionBlocks,
-                            double minRegionFrac, double maxSpreadPx, boolean dilate) {
-        public static final SegConfig DEFAULT = new SegConfig(100, 12, 20, 2.0, 0.15, 1, 2.5, 2.0, 4.0, 30.0, 4, 0.002, 3.0, false);
+                            double minRegionFrac, double maxSpreadPx, boolean dilate,
+                            double parallaxDeg, double parallaxMinCam) {
+        public static final SegConfig DEFAULT = new SegConfig(100, 12, 20, 2.0, 0.15, 1, 2.5, 2.0, 4.0, 30.0, 4, 0.002, 3.0, false, 0.0, 4.0);
     }
 
     /**
@@ -195,6 +201,9 @@ public final class Segmenter {
         byte[] id = new byte[n];
         int minSize = Math.max(c.minRegionBlocks(), (int) Math.ceil(c.minRegionFrac() * n));
         grow(cand, r[0], r[1], cols, rows, c, minSize, id);
+        if (c.parallaxDeg() > 0) {
+            dropParallax(id, r[0], r[1], cam, cols, c);
+        }
         return new Labels(cols, rows, id);
     }
 
@@ -234,6 +243,54 @@ public final class Segmenter {
             }
         }
         return kept;
+    }
+
+    /**
+     * P1.9: removes regions that look like parallax: the region's median residual points the same way
+     * as the camera's vector at the region's centroid (within parallaxDeg), and that vector is at
+     * least parallaxMinCam long. Ids are left as they are (gaps are fine; only zero vs non-zero is
+     * stored in the .cmp).
+     */
+    static void dropParallax(byte[] id, float[] rx, float[] ry, GlobalMotion.Model cam, int cols, SegConfig c) {
+        double cosMax = Math.cos(Math.toRadians(c.parallaxDeg()));
+        int[] count = new int[256];
+        for (byte b : id) {
+            count[b & 0xFF]++;
+        }
+        double[] v = new double[2];
+        for (int r = 1; r < 256; r++) {
+            if (count[r] == 0) {
+                continue;
+            }
+            float[] tx = new float[count[r]];
+            float[] ty = new float[count[r]];
+            double sx = 0;
+            double sy = 0;
+            int k = 0;
+            for (int i = 0; i < id.length; i++) {
+                if ((id[i] & 0xFF) == r) {
+                    tx[k] = rx[i];
+                    ty[k] = ry[i];
+                    sx += (i % cols) * Types.MB + Types.MB / 2.0;
+                    sy += (i / cols) * Types.MB + Types.MB / 2.0;
+                    k++;
+                }
+            }
+            java.util.Arrays.sort(tx);
+            java.util.Arrays.sort(ty);
+            double mx = median(tx);
+            double my = median(ty);
+            cam.predict(sx / k, sy / k, v);
+            double cm = Math.hypot(v[0], v[1]);
+            double rm = Math.hypot(mx, my);
+            if (cm >= c.parallaxMinCam() && rm > 0 && (mx * v[0] + my * v[1]) / (cm * rm) >= cosMax) {
+                for (int i = 0; i < id.length; i++) {
+                    if ((id[i] & 0xFF) == r) {
+                        id[i] = 0;
+                    }
+                }
+            }
+        }
     }
 
     /** Close residuals, or two long residuals pointing the same way. */

@@ -375,3 +375,18 @@ What the numbers say
 - P4-B mode 1 decodes FASTER than the baseline: 76.2 vs 61.0 fps (+25%) and 45.6 vs 52.3 ms on one core (-13%), because there is less data to inflate and parse. With the 1.18x to 1.23x size gain, mode 1 is smaller and faster with identical pictures.
 - E4 evidence so far: compression stage 29 to 55 s per full SAL clip, decode faster than real time; segmentation time and real files come with wire-up.
 - Trace caveat: the per-frame traces of the two full-length runs are not usable (the clip was replayed with space before q, which restarts the clock; the trace is written at exit). The printed reports are taken at the end of the first pass and are valid. Fix queued: trace records the first pass only (P3 parcel).
+
+### P1.9 step 2: parallax filter experiment [A/P1] (sandbox; built, OFF by default, DECISION REQUEST)
+Finding (video2 f191, residual dump): the false fence region has a steady residual (-7, 0) pointing the same way as the camera's own vector (-11, -1); near background under a moving camera slides further the same way. The joggers' residuals are mixed (arms and legs) and mostly against the flow, so the consistency rule breaks them up while the fence stays one coherent region.
+Filter (`SegConfig.parallaxDeg`, `parallaxMinCam`): drop a region whose median residual points within N degrees of the camera vector at its centroid, when that vector is >= 4 px.
+
+Sweep, mean final foreground % on the sweep frames:
+
+| Setting | video1 | video2 | Stairs | SAL |
+|---|---|---|---|---|
+| Step 1 defaults (filter off) | 1.55 | 5.81 | 1.60 | 1.25 |
+| Filter 30 degrees | 1.55 | 2.33 | 1.60 | 0.91 |
+| Filter 45 degrees | 1.55 | 2.26 | 1.60 | 0.91 |
+
+Whole clips with the filter at 30 degrees: video2 final foreground 6.95% -> 4.15% (frames with none 1 -> 8); video1 2.70% -> 2.24% (frames with none 16 -> 51). Eye check: video2 tree and fence regions gone, joggers unchanged (`docs/img/p19_parallax_on_video2.jpg`); video1 mostly loses false crosswalk-stripe regions, but on f9 also part of a real pedestrian (`docs/img/p19_parallax_video1_f9_50_131_off.jpg` vs `_on.jpg`). Two existing unit tests fail with it on, both exactly the risk: a real mover whose residual runs along the camera's flow (anything moving against the camera's direction) is deleted.
+Status: code and 4 tests committed, default OFF (labels unchanged). It conflicts with the adopted principle in 03 D3 ("lean foreground when unsure"), so it waits for a DECISION REQUEST (WORKLOG).

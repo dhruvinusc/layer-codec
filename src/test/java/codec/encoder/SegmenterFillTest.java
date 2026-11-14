@@ -114,7 +114,7 @@ class SegmenterFillTest {
         SegConfig d = SegConfig.DEFAULT;
         SegConfig dil = new SegConfig(d.minTextureVar(), d.maxMatchMad(), d.candMinVar(), d.camSlackMad(), d.camSlackRel(),
                 d.camWindow(), d.resPx(), d.consPx(), d.consMinMag(), d.consAngleDeg(), d.minRegionBlocks(),
-                d.minRegionFrac(), d.maxSpreadPx(), true);
+                d.minRegionFrac(), d.maxSpreadPx(), true, d.parallaxDeg(), d.parallaxMinCam());
         Labels in = grid(
                 "00000",
                 "01020",

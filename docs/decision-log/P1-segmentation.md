@@ -281,3 +281,18 @@ Technical source: repo `docs/DECISIONS.md` (P1-D*) and Project doc 03 (D2, D3, D
 - Cost or limitation: SAL loses the walker for the last 19 frames, where he reaches the frame edge; Stairs has 13 more empty frames, mostly where he is distant.
 - Say it in the presentation: "The numbers said one combination was best, but when I watched the clips it was deleting the joggers, so I kept only the change that removed false patches without touching people."
 - Likely professor question: How do you tune without ground truth? / Answer: Foreground share is the cost we can measure, and the pictures are the check. Every candidate setting was run on all four whole clips and rejected if it lost a person anywhere.
+
+### P1-L20: A parallax filter, built but held for a decision (PENDING)
+- Date / window: Nov 14, Window A (P1-D24; DECISION REQUEST in WORKLOG)
+- Brief says: background has one constant camera vector (B6); several independently moving regions are allowed (B8).
+- The problem in plain words: on video2 the camera runs alongside the joggers, and the fence and trees close to the camera slide past faster than the far background. Our camera model is fitted to the far background, so the fence has a large, very consistent leftover motion and is labelled foreground. The joggers' arms and legs move in mixed directions, so they are labelled less well than the fence.
+- Options we considered:
+  1. Leave it : good, never deletes a real mover / bad, video2 keeps about 7% foreground, mostly fence and trees.
+  2. Drop any region whose leftover motion points the same way as the camera's flow (within 30 degrees, camera moving at least 4 px) : good, video2 6.95% -> 4.15%, fence and trees gone, joggers unchanged / bad, also deletes a real person who walks against the camera's direction (seen once on video1, and in two unit tests).
+  3. A full 3D (depth-aware) camera model : good, the right fix for parallax / bad, far outside this project's scope and time.
+- What we chose: option 2 is built and tested but switched off. The default stays option 1 until Dhruvin and PM decide.
+- Why (plain words): project decision D3 says to lean foreground when unsure, because a wrongly blurred person is visible while false foreground only costs bits. Option 2 reverses that trade for one class of motion, so it is not mine to switch on alone.
+- Proof: RESULTS "P1.9 step 2" (sweep, whole-clip numbers, eye-check images); `SegmenterParallaxTest` (4 tests: off by default, fence-like region dropped, counter-flow person kept, slow camera disables it).
+- Cost or limitation: with it off, video2's fence and trees stay foreground; with it on, a person moving against the camera's direction can be blurred.
+- Say it in the presentation: "Parallax is the one thing a flat camera model cannot explain. I built a filter for it, measured what it removes and what it wrongly removes, and kept the conservative default."
+- Likely professor question: Why not switch it on, since the numbers are better? / Answer: The numbers count foreground blocks, not mistakes. The filter's errors are blurred people, which are the errors a viewer notices, so I keep it off unless the evaluation clips make the trade clearly worth it.
