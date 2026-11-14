@@ -181,8 +181,9 @@ class CmpFormatTest {
 
     @Test
     void ruleUnknownModeRejected() throws IOException {
-        Path p = patched(write("md.cmp", header(true), randomFrame(new Random(7), header(true))), 6, (byte) 0, (byte) 0x03);
-        assertTrue(errorOf(p).contains("unknown mode 1"));
+        // Mode 1 became legal in P4 (zigzag + run-length), so mode 2 is the first unknown one.
+        Path p = patched(write("md.cmp", header(true), randomFrame(new Random(7), header(true))), 6, (byte) 0, (byte) 0x05);
+        assertTrue(errorOf(p).contains("unknown mode 2"));
     }
 
     @Test

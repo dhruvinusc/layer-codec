@@ -1,6 +1,6 @@
 # P4 Extra credit: decision log
 
-Owner: proposed by Window C (Nov 14). Status: DESIGN PROPOSAL, nothing built. This file is a DECISION REQUEST for PM (00 section 5): it asks for a yes, a smaller yes, or a no before any code exists.
+Owner: proposed by Window C (Nov 14). Status: P4-L1 was a DECISION REQUEST (Nov 14); PM approved option B the same day. Option A waits for the Nov 22 checkpoint.
 
 ### P4-L1: Motion-compensated residual coding and zigzag + run-length (DECISION REQUEST)
 - Date / window: Nov 14, Window C (proposal only)
@@ -10,7 +10,7 @@ Owner: proposed by Window C (Nov 14). Status: DESIGN PROPOSAL, nothing built. Th
   1. A: full extra credit (F1 + F2): residual coding with one motion vector per 16x16 macroblock, predicted from the RECONSTRUCTED previous frame, an I frame (coded from scratch) every N frames, then zigzag + run-length : good the largest size gain, covers both extra-credit items / bad most code, breaks the decoder's frame-parallel speed trick (see risks), about 3.5 days
   2. B: only F2: zigzag + run-length on today's baseline blocks, as a new mode : good small, safe, every frame still independent so the P3 player keeps working unchanged / bad modest gain, covers one item only, about 1 day
   3. C: no extra credit : good all time goes to P1 quality, report and rehearsal / bad leaves possible marks unused
-- What we chose: PROPOSED, not decided: B first (Nov 19 to 20), then A only if P1 and wire-up are done and a checkpoint on Nov 22 says there is time. PM decides.
+- What we chose: PM decision Nov 14: B APPROVED (zigzag + run-length, .cmp mode 1). A is decided at the Nov 22 checkpoint, only if P1 and wire-up are done. Requirements set by PM: a golden SHA test proves the baseline output byte-identical; mode-1 files play with the same mydecoder command line; size and decode fps measured against the baseline. Answers to the four questions (proposal defaults, PM said use them unless they conflict): (1) B yes; (2) A conditional on Nov 22; (3) Window C builds P4, with the one change B needs in the closed CmpFormat (accept mode 1) and the matching edit of its "unknown mode" test (mode 2 is now the first unknown one); the myencoder option waits for wire-up in Window A's EncoderMain (PARCEL); (4) N = 8 if A is approved.
 - Why (plain words): B is cheap, low risk and measurable in a day, and its run-length coder is reused by A anyway. A carries real risk to real-time playback, and P1 is the critical path with thin margin (due Nov 16), so A should only start once the required parts are safe.
 - Proof: none yet (design). Measurements planned below.
 - Cost or limitation: see Risks and Effort below.
@@ -58,3 +58,18 @@ Owner: proposed by Window C (Nov 14). Status: DESIGN PROPOSAL, nothing built. Th
 2. Approve A conditionally, with a go/no-go on Nov 22, or not at all?
 3. Which window builds P4 (Window C, or a new P4 window), and may it change CmpFormat (reader dispatch for modes 1 and 2), FrameEncoder and EncoderMain's flag parsing?
 4. Accept N = 8 for the I-frame interval (memory and parallel decode), or prefer a larger N for size?
+
+### P4-L2: Zigzag + run-length built as .cmp mode 1 (option B)
+- Date / window: Nov 14, Window C
+- Brief says: "A better coefficient scan order (zigzag) to help compression" (F2). Extra credit behind a flag, baseline output unchanged (00 section 3).
+- The problem in plain words: After quantization most coefficients are zero, but the baseline stores all 64 of them per channel (2 bytes each). zlib squeezes some of that out, but it does not know the zeros cluster at high frequencies.
+- Options we considered:
+  1. Zigzag only, keep 2 bytes per coefficient : good trivial / bad zlib alone gains little from the reorder
+  2. Zigzag + run-length (run of zeros, value) with an end-of-block marker, then zlib as before : good all-zero channels cost 1 byte, lossless, every frame still independent / bad a new decoder path
+  3. Full entropy coding (Huffman tables like JPEG) : good smaller still / bad much more code, harder to explain, little gain over zlib on top of run-length
+- What we chose: Option 2. Pairs of (1 byte zeros before the value, 2 byte value), 0xFF ends each channel, same block order and block_type byte as the baseline, mode 1 in the header flags. Decoding unpacks into the same arrays the baseline uses, so dequantize and inverse DCT are shared and the pixels are identical. A tool, CmpRecode, turns any baseline file into mode 1 with the same coefficients (myencoder gets its option at wire-up).
+- Why (plain words): It is the simplest coder that exploits the zigzag order, it keeps frames independent so the P3 player and its parallel decoding work unchanged, and the run-length code is reused if option A is approved.
+- Proof: GoldenBaselineTest (baseline payload and file SHA-256 unchanged; values pinned on 78da695 before any P4 code); RunLengthTest (JPEG zigzag order, lossless round trip at 0 to 100% density including -32768 and 32767, all-zero channel = 1 byte, corrupt input errors); FrameDecodeTest (mode-1 file gives pixel-identical frames to baseline through the decode pipeline; bench plays mode 1 with the same command line); CmpRecodeTest. Full suite 207/207 (sandbox). Real files (RESULTS "P4-B"): video2 (2,5) 44.8 to 37.8 MB (1.18x smaller), SAL (2,5) 116.1 to 94.0 MB (1.23x); frames 0, middle and last pixel-identical to the baseline.
+- Cost or limitation: The gain on these test files is modest (1.18x to 1.23x), at the low end of the 1.2x to 1.5x estimate, because zlib already removed much of the zero padding. The test files mark half the blocks foreground (fake checkerboard), which keeps many nonzero coefficients; real labels (5 to 12% foreground) should do better, to be measured after wire-up. Decode speed on the Mac not measured yet (quiet Mac).
+- Say it in the presentation: "Our extra credit scans each block from low to high frequency and stores only the nonzero values with the count of zeros before them; on our test files that made the files about 20% smaller with identical pictures."
+- Likely professor question: Why so little gain if most coefficients are zero? / Answer: zlib was already compressing those runs of zero bytes in the baseline. Run-length still helps because zigzag puts the zeros together, and the gain grows when fewer blocks are foreground, as with real segmentation.

@@ -323,3 +323,17 @@ Whole clips after step 1 (`docs/img/p19_step1_*.jpg`):
 | SAL | 1.85% -> 1.07% | 2.9% | 1.76 | 0 -> 11 (frames 409 to 427, walker at the right edge) |
 
 Reading: SAL now shows the walker in all three frames and one brick patch (f218) instead of five; video2's false fence region shrank and both joggers are found at f306. 120 to 190 more empty frames would have been the price of option A.
+
+## P4 extra credit (Window C)
+
+### P4-B zigzag + run-length (.cmp mode 1), sizes (Nov 14, sandbox: sizes do not depend on the machine)
+`CmpRecode` rewrites a baseline file as mode 1 with the same quantized coefficients (fake checkerboard labels, half the blocks foreground).
+
+| File | Frames | Raw payload per frame (baseline -> mode 1) | File size (zlib), baseline -> mode 1 | Smaller by |
+|---|---|---|---|---|
+| video2 (2,5) | 120 | 2.45 -> 0.93 MB | 44.8 -> 37.8 MB | 1.18x |
+| SAL (2,5) | 60 | 12.57 -> 4.68 MB | 116.1 -> 94.0 MB | 1.23x |
+
+- Pixel identity on real data: frames 0, middle and last of both files decode identically from baseline and mode 1 (sandbox check).
+- Run-length alone shrinks the raw payload 2.7x, but zlib already removed much of the zero padding in the baseline, so the stored gain is 1.18x to 1.23x. With real labels (5 to 12% foreground) the gain should be larger: re-measure after wire-up.
+- Decode fps baseline vs mode 1: PENDING on a quiet Mac (`./mydecoder out/p3/SAL_2_5.cmp --bench --workers 4` and the same for `SAL_2_5_rle.cmp`).

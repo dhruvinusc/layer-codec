@@ -42,6 +42,8 @@ public final class CmpFormat {
     public static final int MODE_SHIFT = 1;
     public static final int MODE_MASK = 0x7 << MODE_SHIFT;
     public static final int MODE_BASELINE = 0;
+    /** P4 option B (PM approved Nov 14): baseline blocks, coefficients in zigzag + run-length. */
+    public static final int MODE_RLE = 1;
     /** Coefficients per block: 64 for each of R, G, B. */
     public static final int COEF_PER_BLOCK = 3 * 64;
     /** Bytes per baseline block: 1 type byte + 192 shorts. */
@@ -100,8 +102,9 @@ public final class CmpFormat {
             if ((flags & ~KNOWN_FLAG_BITS) != 0) {
                 throw new CmpException(String.format("unknown flag bits 0x%04x", flags & ~KNOWN_FLAG_BITS));
             }
-            if (mode() != MODE_BASELINE) {
-                throw new CmpException("unknown mode " + mode() + " (this build knows only 0 = baseline)");
+            if (mode() != MODE_BASELINE && mode() != MODE_RLE) {
+                throw new CmpException("unknown mode " + mode()
+                        + " (this build knows 0 = baseline, 1 = zigzag + run-length)");
             }
             checkN("n1", n1);
             checkN("n2", n2);

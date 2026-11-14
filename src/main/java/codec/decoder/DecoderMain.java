@@ -100,8 +100,8 @@ public final class DecoderMain {
             int workers = a.workers() > 0 ? a.workers() : DecodePipeline.defaultWorkers();
             int cap = DecodePipeline.defaultCapacity(h, workers);
             String name = a.cmp().getFileName().toString();
-            System.out.printf("file     : %s  %dx%d  n1=%d n2=%d  frames=%d  fps=%d/%d%n", name, h.width(),
-                    h.height(), h.n1(), h.n2(), r.frameCount(), h.fpsNum(), h.fpsDen());
+            System.out.printf("file     : %s  %dx%d  n1=%d n2=%d  mode=%d  frames=%d  fps=%d/%d%n", name, h.width(),
+                    h.height(), h.n1(), h.n2(), h.mode(), r.frameCount(), h.fpsNum(), h.fpsDen());
             System.out.printf("decode   : %d workers, window %d frames, step-back cache %d frames (%.0f MB)%n",
                     workers, cap, FrameCache.DEFAULT_CAPACITY,
                     FrameCache.bytesFor(h, FrameCache.DEFAULT_CAPACITY) / 1e6);
@@ -232,8 +232,8 @@ public final class DecoderMain {
         try (CmpFormat.Reader r = new CmpFormat.Reader(b.cmp())) {
             CmpFormat.Header h = r.header();
             int n = r.frameCount();
-            System.out.printf("bench    : %s  %dx%d  n1=%d n2=%d  frames=%d  fps=%d/%d  cores=%d%n",
-                    b.cmp().getFileName(), h.width(), h.height(), h.n1(), h.n2(), n,
+            System.out.printf("bench    : %s  %dx%d  n1=%d n2=%d  mode=%d  frames=%d  fps=%d/%d  cores=%d%n",
+                    b.cmp().getFileName(), h.width(), h.height(), h.n1(), h.n2(), h.mode(), n,
                     h.fpsNum(), h.fpsDen(), Runtime.getRuntime().availableProcessors());
             double budget = 1000.0 * h.fpsDen() / h.fpsNum();
             int m = Math.min(SERIAL_FRAMES, n);
@@ -251,7 +251,7 @@ public final class DecoderMain {
 
     private static void serialPass(CmpFormat.Reader r, DecodeCore.Scratch s, int m) throws IOException {
         for (int k = 0; k < m; k++) {
-            DecodeCore.decode(r.header(), r.payload(k), s);
+            FrameDecode.decode(r.header(), r.payload(k), s);
         }
     }
 

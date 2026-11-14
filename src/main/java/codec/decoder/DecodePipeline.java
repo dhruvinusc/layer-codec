@@ -65,7 +65,7 @@ public final class DecodePipeline implements AutoCloseable {
     /** Production pipeline with explicit sizes (bench and tests). */
     public DecodePipeline(CmpFormat.Reader reader, int workers, int capacity) {
         this(reader.header(), reader.frameCount(), workers, capacity,
-                (k, s) -> DecodeCore.decode(reader.header(), reader.payload(k), s));
+                (k, s) -> FrameDecode.decode(reader.header(), reader.payload(k), s));
     }
 
     DecodePipeline(Header header, int frameCount, int workers, int capacity, FrameSource source) {
