@@ -1,9 +1,9 @@
-# P3 END-OF-PART REPORT (DRAFT, Window C)
+# P3 END-OF-PART REPORT (Window C)
 
-Status: DRAFT, Nov 14, 2026. Final version after the three pending Mac checks marked PENDING below. Format: 00 section 10.
+Status: FINAL for PM sign-off, Nov 14, 2026 (draft accepted earlier today; the three pending Mac checks ran in the quiet run, RESULTS "Quiet run (Nov 14)"). Format: 00 section 10.
 
 ```
-END-OF-PART REPORT  P3  Nov 14, 2026 (draft)
+END-OF-PART REPORT  P3  Nov 14, 2026 (final, for PM sign-off)
 
 Checklist IDs proven:
   A3 mydecoder decodes and renders: Mac runs RESULTS "P3.3" runs 1 to 4, "P3.4/P3.4b Mac checks";
@@ -33,12 +33,14 @@ Checklist IDs partial or missing:
   E4 Encode + decode under 10 min: decode side is faster than real time (pipeline 40.7 to 60.7 fps
      at 1080p); needs real myencoder output after wire-up (P3.R).
   D5 final check with real segmentation labels after wire-up (P3.R).
-  PENDING Mac checks before this report is final:
-    1. Step back 35 frames with the original open (both rings, reopen past 30).
-    2. run4.sh on a quiet Mac (no build window busy, after D9): P3.4b verdict, whole-clip late under 2%.
-    3. P3.7 full-length SAL at (0,0) and (2,5), first 100 vs last 100 frames (thermal): blocked on D9.
-  SPEC_CHECKLIST.md boxes for A3, A4, D1 to D4, E1 to E3 not yet ticked: to tick with the evidence
-  above once PM accepts this report.
+  Mac checks that were pending, now done (quiet run Nov 14):
+    1. Step back 35 frames with the original open: both halves updated on every press, no
+       noticeable pause.
+    2. P3.4b: whole-clip late under 2% at (2,5) MET on the full-length clip (0.5%) and in one short
+       run (1.0%); short-clip first runs still 3.5 to 35.5% late with 0 to 3 drops (first-run effect).
+    3. P3.7 full-length SAL: 0 drops at (2,5) and (0,0), within 0.09%, first 100 vs last 100 frames
+       29.9 vs 30.0 fps: no thermal slowdown.
+  SPEC_CHECKLIST.md: A3, A4, D1 to D4, E1 to E3 ticked (78da695); D5 and E4 partial until wire-up.
 
 Key results (Mac, MacBook Air 8 cores, fake checkerboard labels):
   - One 1080p frame on one core: 54.1 ms at (2,5), 71.9 ms at (0,0); budget 33.3 ms.
@@ -48,8 +50,12 @@ Key results (Mac, MacBook Air 8 cores, fake checkerboard labels):
     average (frames 100..199: 0 to 1), 6 workers 5.75%. Late frames = JIT warm-up in the first 2 s.
   - Step-back cache: 30 packed frames = 249.8 MB at 1080p; 100 back to 50 pixel-identical
     (29 hits + 21 re-decodes).
-  - Side by side with the original (background reader): 0 dropped, 1 late, 30.0 fps (+0.14%).
-  - Tests: 175/175 green at 914e8f1 (sandbox), zero warnings.
+  - Side by side with the original (background reader): 0 dropped, 2 late, 30.0 fps (+0.15%).
+  - Full-length SAL (P3.7), 4 workers: (2,5) 0 dropped, 0.5% late, +0.07%; (0,0) 0 dropped, 7.8% late,
+    +0.09%; first 100 vs last 100 frames 29.9 vs 30.0 fps at both (no thermal slowdown, on battery).
+  - Extra credit started (P4-B, approved): mode 1 files 1.18x to 1.23x smaller and 25% faster to
+    decode (76.2 vs 61.0 fps), pixel-identical; baseline bytes pinned by a golden SHA test.
+  - Tests: 207/207 green at a5ba088 (sandbox), zero warnings; OriginalVideoTest 20/20 repeated runs.
 
 Decisions made (repo DECISIONS.md P3-D1..P3-D13; decision log P3-L1..P3-L15):
   frame-parallel decode with serial workers (P3-D1, L2); ordered slots + bounded window (D2, L3);
@@ -60,9 +66,9 @@ Decisions made (repo DECISIONS.md P3-D1..P3-D13; decision log P3-L1..P3-L15):
   background original reader (D13, L15); recovery from the Nov 12 incident (L10).
 
 DECISION REQUESTS pending:
-  - P4 extra-credit design (docs/decision-log/P4-extra-credit.md, P4-L1): options A / B / C.
-  - Conditional: -Xms1g in the mydecoder launchers if the quiet run4 shows whole-clip late over 2%
-    (approved conditionally Nov 13).
+  - None for P3. P4-L1 answered (B approved; A at the Nov 22 checkpoint).
+  - -Xms1g (conditionally approved Nov 13): NOT applied. GC pauses in the quiet run were at most
+    5.7 ms, so heap growth is not what makes frames late.
 
 Doc change requests:
   1. 03 D8 / H3: list the hidden, off-by-default flags --bench, --workers N, --trace file.csv.
@@ -74,7 +80,12 @@ Known issues and risks:
   - First run after a build or a long idle hiccups (JIT warm-up, disk cache); plan a warm-up run.
   - Two 1.4 to 1.8 s whole-process freezes seen on Nov 13 (GC max 7.7 ms, not our code): most likely
     memory swapping on a 94% full disk. Freeing disk (D9) is the fix to try first.
-  - Whole-clip late % is 0.5 to 5.5% (steady state 0 to 1%): P3.4b effect not yet measured cleanly.
+  - The first counted run after a warm-up can still be late on many frames (35.5% in run 4a, mild:
+    median lateness 8 ms, 3 drops); later runs and the full-length clip are 0.5 to 6.5%. For the demo:
+    one warm-up run, then the real one.
+  - The full-length (0,0) clip is 7.8% late with 0 drops (worst case, decode 1.54x real time).
+  - Per-frame traces are written at exit, so a replay (space at the end) spoils them: fix queued
+    (trace records the first pass only); printed reports are unaffected.
   - With the original open, a step back past 30 frames rereads the mp4 from frame 0 (seconds near the
     end of SAL).
   - On a Retina screen "1:1" means one video pixel per screen point (2x2 physical pixels).
@@ -87,6 +98,6 @@ Explain-back: written explain-backs moved to the Tutor at Dhruvin's request (06 
   cache, packed pixels and 100 back to 50, drop vs slow down, pre-roll, 4 vs 6 workers, 1:1 zoom,
   overlay without segmentation code, background reader.
 
-Commit hash: 2127da9 (last P3 commit); this draft adds one more.
-TICKS: P3.0 to P3.6, P3.4c, P3.5c; P3.4b (verdict pending); P3.7 blocked (D9)
+Commit hash: this commit (P3 final report); last P3 code commit e6882d5, P4-B a5ba088.
+TICKS: P3.0 to P3.7, P3.4b, P3.4c, P3.5c, P3.X; open after wire-up: P3.R (real files, D5, E4)
 ```

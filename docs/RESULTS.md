@@ -337,3 +337,41 @@ Reading: SAL now shows the walker in all three frames and one brick patch (f218)
 - Pixel identity on real data: frames 0, middle and last of both files decode identically from baseline and mode 1 (sandbox check).
 - Run-length alone shrinks the raw payload 2.7x, but zlib already removed much of the zero padding in the baseline, so the stored gain is 1.18x to 1.23x. With real labels (5 to 12% foreground) the gain should be larger: re-measure after wire-up.
 - Decode fps baseline vs mode 1: PENDING on a quiet Mac (`./mydecoder out/p3/SAL_2_5.cmp --bench --workers 4` and the same for `SAL_2_5_rle.cmp`).
+
+### Quiet run (Nov 14, 13:43 to 14:00, `out/p3/quiet_run.sh`, log `out/p3/quiet_run.txt`; on battery power, no build window working)
+Warm-up run (not counted): SAL_2_5 0 dropped, 0 late, +0.62%.
+
+P3.4b, SAL 200 frames (2,5), fair order 4/6/6/4, traces out/p3/q_trace_*.csv:
+
+| Run | Workers | Dropped | Late (whole clip) | Late in 100..199 | Played vs clip | Lateness of all frames: median / p95 / max | GC pauses (max) |
+|---|---|---|---|---|---|---|---|
+| 4a | 4 | 3 (1.5%) | 71 (35.5%) | 59 | +0.08% | 8.1 / 32.9 / 120.3 ms | 47 (5.7 ms) |
+| 6a | 6 | 0 | 13 (6.5%) | 0 | +0.16% | 12.2 / 27.2 / 50.6 ms | 73 (2.4 ms) |
+| 6b | 6 | 0 | 2 (1.0%) | 0 | +0.22% | 4.8 / 14.6 / 31.6 ms | 25 (2.1 ms) |
+| 4b | 4 | 0 | 7 (3.5%) | 0 | +0.06% | 5.3 / 16.0 / 31.7 ms | 7 (3.3 ms) |
+
+P3.7, full-length SAL (437 frames), 4 workers (default):
+
+| File | Bench | Dropped | Late | Played vs clip | First 100 frames | Last 100 frames |
+|---|---|---|---|---|---|---|
+| SAL full (2,5), 781 MB | 58.9 fps (1.96x real time) | 0 | 2 (0.5%) | 14.58 vs 14.57 s (+0.07%) | 0 late, 29.9 fps | 1 late, 30.0 fps |
+| SAL full (0,0), 1.8 GB | 46.1 fps (1.54x real time) | 0 | 34 (7.8%) | 14.58 vs 14.57 s (+0.09%) | 3 late, 29.9 fps | 8 late, 30.0 fps |
+
+P4-B, SAL (2,5) 60 frames, same coefficients:
+
+| File | Serial 1 core | Pipeline 4 workers | Play |
+|---|---|---|---|
+| baseline (mode 0) | 52.3 ms/frame | 16.4 ms = 61.0 fps | (warm-up run) 0 dropped, 0 late |
+| mode 1 (zigzag + run-length) | 45.6 ms/frame | 13.1 ms = 76.2 fps | 0 dropped, 10 late (16.7%, max 26.9 ms), +0.34% |
+
+Side by side with the original (P3.4c): SAL_2_5 + SAL.mp4: 0 dropped, 2 late (3.3%), 30.0 fps, +0.15%. Step back 35 frames: both halves updated on every press; no noticeable pause (Dhruvin answered "y" to the pause prompt by mistake and corrected it in chat).
+
+Encode stage (CodecHarness, compression only, fake labels): SAL full (2,5) 67.0 ms/frame = 29 s for 437 frames; (0,0) 124.9 ms/frame = 55 s. Thermal: no thermal or performance warning recorded. Disk 22 GB free before, 17 GB after.
+
+What the numbers say
+- Full-length playback (P3.7): 0 drops at both settings, on time within 0.09% over 14.6 s, and the last 100 frames run as well as the first 100 (29.9 vs 30.0 fps). No thermal slowdown on the fanless Air over a full clip, even at the worst setting (0,0).
+- P3.4b target (whole clip under 2% late at (2,5)): MET on the full-length clip (0.5%) and in run 6b (1.0%); not met in the short-clip runs 4a (35.5%), 6a (6.5%), 4b (3.5%). All late frames are mild (median lateness 5 to 12 ms over all frames, no drops) and cluster in the first counted run, the same first-run effect seen since Nov 12. GC pauses are at most 5.7 ms, so -Xms1g would not help: not applied.
+- 4 vs 6 workers stays 4: both reach 0 drops; the differences between runs are larger than between worker counts.
+- P4-B mode 1 decodes FASTER than the baseline: 76.2 vs 61.0 fps (+25%) and 45.6 vs 52.3 ms on one core (-13%), because there is less data to inflate and parse. With the 1.18x to 1.23x size gain, mode 1 is smaller and faster with identical pictures.
+- E4 evidence so far: compression stage 29 to 55 s per full SAL clip, decode faster than real time; segmentation time and real files come with wire-up.
+- Trace caveat: the per-frame traces of the two full-length runs are not usable (the clip was replayed with space before q, which restarts the clock; the trace is written at exit). The printed reports are taken at the end of the first pass and are valid. Fix queued: trace records the first pass only (P3 parcel).
