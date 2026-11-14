@@ -7,8 +7,8 @@ Due Wed Dec 2, 2026.
 ## A. Command line
 - [ ] A1 `myencoder input_video.mp4 n1 n2` produces `input_video.cmp` (partial: stub validates args and derives the path, `EncoderMainTest.validArgsAreParsedAndOutputIsDerived`)
 - [ ] A2 n1 = quantization exponent for FOREGROUND, n2 = for BACKGROUND (partial: CLI order and usage text, `EncoderMain.USAGE`)
-- [ ] A3 `mydecoder input_video.cmp` decodes and renders
-- [ ] A4 Decoder needs nothing except the .cmp (all metadata in the file)
+- [x] A3 `mydecoder input_video.cmp` decodes and renders ([C/P3] DecoderMain.play; Mac playback RESULTS.md "P3.3 Player, Mac run 2" and "run 4"; DecodePipelineTest.everyFrameIdenticalToSerialDecode)
+- [x] A4 Decoder needs nothing except the .cmp (all metadata in the file) ([C/P3] header carries size, padded size, fps, frame count, n1, n2 (03 D7); all playback, bench and error runs use the .cmp alone, original mp4 optional for side by side only; CmpFormatTest.headerIs48BytesWithPatchedCountsAndZeroReserved, DecoderMainErrorsTest)
 
 ## B. Part 1: Segmentation (encoder)
 - [ ] B1 Frame 0 treated as an I frame
@@ -32,17 +32,17 @@ Due Wed Dec 2, 2026.
 - [x] C6 Baseline without zigzag, intermediary representation, or entropy coding is acceptable ([B/P2] coefficients row-major, no zigzag (P2-D1); zlib is lossless byte packing only (03 D7, ZioTest); baseline mode 0)
 
 ## D. Part 3: Decoder
-- [ ] D1 Parses n1, n2, block types, coefficients (partial [B/P2]: CmpFormat.Reader + validation tests rule*)
-- [ ] D2 Dequantizes each block with n1 or n2 by block_type
-- [ ] D3 Inverse DCT, reconstruct, display
-- [ ] D4 Plays at the ORIGINAL frame rate
-- [ ] D5 Foreground visibly cleaner than background when n1 < n2; effect reverses when swapped
+- [x] D1 Parses n1, n2, block types, coefficients ([B/P2] CmpFormat.Reader + validation tests rule*; [C/P3] DecodeCoreTest.returnsTheBlockTypeMap, DecodePipelineTest.everyFrameIdenticalToSerialDecode, DecoderMainErrorsTest)
+- [x] D2 Dequantizes each block with n1 or n2 by block_type ([C/P3] DecodeCoreTest.blockTypeChoosesTheExponent, DecodeCoreTest.storedThreeRebuildsAs12InForegroundAnd96InBackground; RESULTS.md P2.9 fg/bg PSNR)
+- [x] D3 Inverse DCT, reconstruct, display ([C/P3] DctTest.zeroSkipInverseIsBitIdenticalToPlainInverse, DecodeCoreTest.nZeroRoundTripIsNearlyExactAndCropped, Player + Display on the Mac: RESULTS.md P3.3; docs/img/p3_SAL_n2_5_side_1to1.png)
+- [x] D4 Plays at the ORIGINAL frame rate ([C/P3] RESULTS.md "P3.3 Player, Mac run 2" (all clips within 0.6%, video2 12.77 s vs 12.77 s) and "run 4" (0 drops, within 0.13%); PlayerTest.fastDecodePlaysEveryFrameOnTimeAndPausesOnTheLast, slowDecodeDropsFramesButKeepsTheOriginalRate)
+- [ ] D5 Foreground visibly cleaner than background when n1 < n2; effect reverses when swapped (partial [C/P3]: fake checkerboard labels; docs/img/p3_SAL_n2_5_side_1to1.png vs p3_SAL_n5_2_side_1to1.png (decoder 1:1 side by side), RESULTS.md P2.9 fg 47.7 vs bg 34.5 dB at (2,5), reversed at (5,2); final check with real labels after wire-up, P3.R)
 
 ## E. Player and run time
-- [ ] E1 Own display code for input and output video
-- [ ] E2 Play, PAUSE, STEP frame by frame
-- [ ] E3 Output can be compared against the original
-- [ ] E4 Encode + decode finish within 10 minutes
+- [x] E1 Own display code for input and output video ([C/P3] Display: own bilinear scaler (P0-D8), packed path, Display.View; DisplayScalerTest, DisplayViewTest; original read by OriginalVideo, OriginalVideoTest)
+- [x] E2 Play, PAUSE, STEP frame by frame ([C/P3] Mac keys check Nov 12 (WORKLOG [C/P3] "P3.3 DONE"); PlayerTest.pauseStepAndStepBackMoveOneFrameAndStopTheClock; step back: FrameCacheTest.stepBackFiftyFrom100CrossesTheCacheBoundaryCorrectly)
+- [x] E3 Output can be compared against the original ([C/P3] side by side + 1:1 zoom + overlay: docs/img/p3_SAL_n2_5_side_1to1.png, p3_SAL_n5_2_side_1to1.png, p3_video2_n2_5_overlay.png; Mac view check and 0 drops with the original at 30.0 fps: RESULTS.md "P3.4 / P3.4b Mac checks, Nov 13")
+- [ ] E4 Encode + decode finish within 10 minutes (partial [C/P3]: decode faster than real time, pipeline 40.7 to 60.7 fps at 1080p, RESULTS.md P3.1; encode side and real files after wire-up, P3.R)
 
 ## F. Extra credit (only after A to E are green)
 - [ ] F1 Motion-compensated prediction: encode residual + one MV per macroblock
