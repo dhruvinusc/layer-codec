@@ -284,3 +284,15 @@ Recovering a quarter of that walker would nearly double false foreground on vide
 | SAL | 1.9 / 3.7 / 1.2 | 2.0 / 3.9 / 1.2 | 3.2 / 6.6 / 2.0 |
 
 Reading (`docs/img/p17_*.jpg`, checked by eye): vote and hole fill add 0 to 0.6 points and make the Stairs f173 torso solid instead of speckled. Dilation roughly doubles foreground on every clip because it grows the false regions as much as the people, so it stays off (`SegConfig.dilate = false`). Walkers' dark trousers on Stairs remain background (flat, no texture, see P1.6 known limits).
+
+### P1.8 temporal vote, whole clips [A/P1] (sandbox, 4 cores; timings not authoritative, Mac run on Nov 16)
+`VizSeg <clip> --stats --sheet docs/img/p18_<clip>.jpg`: the full streamed pipeline (`Segmenter.Run`): hierarchical search seeded with the previous field and camera vector, reliability, camera fit, candidate gate, grouping, fill, 2-of-3 vote read through motion. Per-frame CSV `out/viz/<clip>_seg.csv`. Frame 0 copies frame 1.
+
+| Clip | Frames | Camera mix | Mean inliers | Foreground before vote | Final foreground (max) | Regions/frame | Frames with no foreground | ME ms/frame | Seg ms/frame | Wall (whole clip) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| video1 | 518 | homography 517 | 0.774 | 3.72% | 3.12% (18.7%) | 3.65 | 11 | 37 | 2.4 | 21 s |
+| video2 | 383 | homography 381, translation 1 | 0.737 | 9.25% | 7.71% (24.7%) | 8.13 | 0 | 37 | 3.2 | 16 s |
+| Stairs | 346 | homography 345 | 0.904 | 1.62% | 1.59% (5.9%) | 1.23 | 66 | 209 | 16.6 | 82 s |
+| SAL | 437 | homography 436 | 0.853 | 2.36% | 1.85% (4.6%) | 3.66 | 0 | 208 | 15.4 | 102 s |
+
+Reading: the vote removes 16 to 22% of foreground on video1, video2 and SAL (one-frame flicker), and almost nothing on Stairs, whose regions are already stable. Stairs' empty frames are 1 to 71 (the distant walker, P1.6 known limit) plus 4 short gaps. Speed: SAL motion + segmentation for the whole clip is 102 s in the sandbox, against the 3-minute target on the Mac. Images `docs/img/p18_*.jpg` (final labels): SAL walker in all three frames with smaller brick patches; video2 joggers only partly found, fence and trees still false; that is the main target for P1.9.

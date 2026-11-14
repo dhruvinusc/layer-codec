@@ -252,3 +252,18 @@ Technical source: repo `docs/DECISIONS.md` (P1-D*) and Project doc 03 (D2, D3, D
 - Cost or limitation: flat dark trousers that are not enclosed (they reach the stairs below) stay background.
 - Say it in the presentation: "If a block is surrounded by the walker, it is part of the walker. That rule fills the holes but never invents a new object."
 - Likely professor question: Why not dilate to be safe, since false foreground only costs bits? / Answer: We measured it: dilation doubled foreground on every clip, mostly around false regions. That doubles the bits spent on the wrong blocks for a small gain at object edges.
+
+### P1-L18: A 2-of-3 frame vote that follows the motion
+- Date / window: Nov 14, Window A (P1-D21, P1-D22; Project decision D3 step 6)
+- Brief says: every macroblock of every frame gets a label (B10); silent on temporal smoothing.
+- The problem in plain words: a block can be called foreground in one frame and background in the next for no real reason (noise, a bad match). On playback that flicker is visible as a patch switching between sharp and blurry.
+- Options we considered:
+  1. No smoothing : good, simplest / bad, flicker.
+  2. Vote at the same block position in neighbouring frames : good, simple / bad, the camera moves up to two blocks per frame on video2, so it would compare a person with the empty spot he just left.
+  3. Vote 2 of 3 frames, looking up each neighbour frame where the block actually was, using the motion vectors : good, follows moving people / bad, needs one frame of delay.
+- What we chose: option 3, streamed with one frame of lookahead (the encoder never holds the clip).
+- Why (plain words): a real moving person is foreground in consecutive frames, a noise blip is not. Following the vectors makes the vote compare the same piece of the scene.
+- Proof: `SegmenterTemporalTest` (blip removed, one-frame gap filled, mover kept with no ghost); RESULTS "P1.8" (16 to 22% of foreground removed on video1, video2, SAL; whole SAL in 102 s in the sandbox).
+- Cost or limitation: the first and last frame are not smoothed; region colours in the overlay can change between frames because ids are not matched (the file stores only foreground or background, so this does not affect compression).
+- Say it in the presentation: "A block has to be foreground in two of three consecutive frames, and I follow its motion vector to find it in the neighbouring frames, so a person who moves a whole block per frame is still counted."
+- Likely professor question: Why 2 of 3 and not more frames? / Answer: Each extra frame adds a frame of delay and more chance of losing fast, short motions like a swinging leg. Two of three removes single-frame flicker, which was the problem we saw.

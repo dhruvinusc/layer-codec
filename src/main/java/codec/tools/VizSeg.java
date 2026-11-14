@@ -29,7 +29,8 @@ import javax.imageio.ImageIO;
  *
  * <p>{@code --naive} labels with the naive baseline (P1.5), {@code --seg} with the current segmenter, and {@code --sheet f.jpg} writes the frames
  * side by side at half size. {@code --cam-stats [--step k]} fits the camera model on every k-th frame
- * pair and writes {@code <out>/<clip>_cam.csv}. {@code --me-check} compares search methods (P1.3).
+ * pair and writes {@code <out>/<clip>_cam.csv}. {@code --stats} runs the full segmenter over the whole
+ * clip (temporal vote included) and writes {@code <out>/<clip>_seg.csv}. {@code --me-check} compares search methods (P1.3).
  *
  * <p>Drawing is done directly on the pixel array, so the tool needs nothing beyond ImageIO.
  */
@@ -47,6 +48,10 @@ public final class VizSeg {
         Options o = Options.parse(args);
         if (o.meCheck) {
             meCheck(o.clip, o.range);
+            return;
+        }
+        if (o.stats) {
+            segStats(o.clip, o.out, o.sheet);
             return;
         }
         if (o.camStats) {
@@ -239,6 +244,111 @@ public final class VizSeg {
                 name, pairs, step, mix, sumRatio / pairs, minRatio, sumRms / pairs, sumReliable / pairs, sumFit / pairs, csv);
     }
 
+    /**
+     * P1.8 / P1.9 evidence: the full segmenter ({@link Segmenter.Run}) over the whole clip. Writes
+     * {@code <out>/<clip>_seg.csv} (one row per frame), prints a summary, and with {@code --sheet}
+     * saves the FINAL labels at 20/50/80% of the clip.
+     */
+    static void segStats(Path clip, Path outDir, Path sheet) throws IOException {
+        Files.createDirectories(outDir);
+        String name = clip.getFileName().toString().replaceFirst("\\.[^.]+$", "");
+        try (VideoIO.Reader reader = VideoIO.open(clip)) {
+            VideoInfo info = reader.info();
+            int[] at = defaultFrames(info.frameCount());
+            int[][] panels = new int[at.length][];
+            Frame[] keep = new Frame[at.length];
+            Segmenter.Run run = new Segmenter.Run(info.paddedW(), info.paddedH(), Segmenter.SegConfig.DEFAULT,
+                    GlobalMotion.GmConfig.DEFAULT, MotionEstimator.HierParams.DEFAULT);
+            Frame f = Frame.allocate(info.width(), info.height());
+            int emitted = 0;
+            long t0 = System.nanoTime();
+            java.util.List<Labels> ready = new java.util.ArrayList<>();
+            for (int t = 0; reader.read(f); t++) {
+                Frame p = Pad.toMacroblocks(f);
+                int k = indexOf(at, t);
+                if (k >= 0) {
+                    keep[k] = p;
+                }
+                ready.addAll(run.push(ColorConv.luma(p)));
+                emitted = drain(ready, emitted, at, keep, panels, info);
+            }
+            ready.addAll(run.finish());
+            emitted = drain(ready, emitted, at, keep, panels, info);
+            double wall = (System.nanoTime() - t0) / 1e9;
+            writeSegCsv(run.stats(), outDir.resolve(name + "_seg.csv"));
+            printSegSummary(name, run.stats(), wall);
+            if (sheet != null) {
+                writeSheet(panels, panels.length, info.width(), info.height(), sheet);
+                System.out.println("sheet " + sheet);
+            }
+        }
+    }
+
+    /** Renders kept frames whose final labels are now available; returns the new emitted count. */
+    private static int drain(java.util.List<Labels> ready, int emitted, int[] at, Frame[] keep, int[][] panels, VideoInfo info) {
+        for (Labels l : ready) {
+            int k = indexOf(at, emitted);
+            if (k >= 0 && keep[k] != null) {
+                panels[k] = crop(render(keep[k], l, null), keep[k].width(), info.width(), info.height());
+                keep[k] = null;
+            }
+            emitted++;
+        }
+        ready.clear();
+        return emitted;
+    }
+
+    private static int indexOf(int[] a, int v) {
+        for (int i = 0; i < a.length; i++) {
+            if (a[i] == v) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static void writeSegCsv(java.util.List<Segmenter.FrameStats> st, Path csv) throws IOException {
+        try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(csv))) {
+            pw.println("frame,camera,inlier_ratio,reliable_pct,raw_fg_pct,fg_pct,regions,me_ms,seg_ms");
+            for (Segmenter.FrameStats s : st) {
+                pw.printf("%d,%s,%.3f,%.1f,%.2f,%.2f,%d,%.1f,%.1f%n", s.frame(), s.camera(), s.inlierRatio(),
+                        s.reliablePct(), s.rawFgPct(), s.fgPct(), s.regions(), s.meMs(), s.segMs());
+            }
+        }
+    }
+
+    private static void printSegSummary(String name, java.util.List<Segmenter.FrameStats> st, double wall) {
+        int[] kinds = new int[GlobalMotion.Kind.values().length];
+        double inl = 0;
+        double raw = 0;
+        double fg = 0;
+        double reg = 0;
+        double me = 0;
+        double seg = 0;
+        double maxFg = 0;
+        int empty = 0;
+        int n = st.size() - 1;              // frame 0 is a copy
+        for (Segmenter.FrameStats s : st.subList(1, st.size())) {
+            kinds[s.camera().ordinal()]++;
+            inl += s.inlierRatio();
+            raw += s.rawFgPct();
+            fg += s.fgPct();
+            reg += s.regions();
+            me += s.meMs();
+            seg += s.segMs();
+            maxFg = Math.max(maxFg, s.fgPct());
+            empty += s.regions() == 0 ? 1 : 0;
+        }
+        StringBuilder mix = new StringBuilder();
+        for (GlobalMotion.Kind k : GlobalMotion.Kind.values()) {
+            if (kinds[k.ordinal()] > 0) {
+                mix.append(k).append(' ').append(kinds[k.ordinal()]).append(' ');
+            }
+        }
+        System.out.printf("%s frames=%d camera: %smean inliers %.3f | fg raw %.2f%% final %.2f%% (max %.1f%%) regions/frame %.2f, frames with none %d | ME %.0f ms, seg %.1f ms per frame | wall %.1f s%n",
+                name, n + 1, mix, inl / n, raw / n, fg / n, maxFg, reg / n, empty, me / n, seg / n, wall);
+    }
+
     /** Top-left trueW x trueH of a padded packed image. */
     static int[] crop(int[] rgb, int w, int trueW, int trueH) {
         int[] c = new int[trueW * trueH];
@@ -388,11 +498,11 @@ public final class VizSeg {
     }
 
     private record Options(Path clip, int[] at, boolean arrows, int range, Path out, boolean meCheck,
-                           boolean naive, boolean seg, boolean camStats, int step, Path sheet) {
+                           boolean naive, boolean seg, boolean stats, boolean camStats, int step, Path sheet) {
         static Options parse(String[] a) {
             if (a.length < 1) {
                 System.err.println("usage: VizSeg <clip> [--at f1,f2,..] [--arrows] [--range R] [--out dir] [--me-check]"
-                        + " [--naive | --seg [--sheet file.jpg]] [--cam-stats [--step k]]");
+                        + " [--naive | --seg | --stats [--sheet file.jpg]] [--cam-stats [--step k]]");
                 System.exit(2);
             }
             int[] at = null;
@@ -402,6 +512,7 @@ public final class VizSeg {
             boolean meCheck = false;
             boolean naive = false;
             boolean seg = false;
+            boolean stats = false;
             boolean camStats = false;
             int step = 1;
             Path sheet = null;
@@ -414,6 +525,7 @@ public final class VizSeg {
                     case "--me-check" -> meCheck = true;
                     case "--naive" -> naive = true;
                     case "--seg" -> seg = true;
+                    case "--stats" -> stats = true;
                     case "--cam-stats" -> camStats = true;
                     case "--step" -> step = Integer.parseInt(a[++i]);
                     case "--sheet" -> sheet = Path.of(a[++i]);
@@ -423,7 +535,7 @@ public final class VizSeg {
             if (step < 1) {
                 throw new IllegalArgumentException("--step must be >= 1");
             }
-            return new Options(Path.of(a[0]), at, arrows, range, out, meCheck, naive, seg, camStats, step, sheet);
+            return new Options(Path.of(a[0]), at, arrows, range, out, meCheck, naive, seg, stats, camStats, step, sheet);
         }
     }
 }

@@ -402,6 +402,181 @@ public final class Segmenter {
     }
 
     /**
+     * P1.8 temporal vote with one frame of lookahead. A block is foreground in frame t if it is
+     * foreground in at least 2 of t-1, t, t+1. Frames are not aligned (the camera moves up to two
+     * blocks per frame on video2), so the neighbours are read through motion: frame t-1 at the
+     * position block i came from (its own vector), frame t+1 at the position that frame's vector at i
+     * points back from (an approximation of the inverse). A missing neighbour (first or last frame)
+     * counts as a copy of frame t, so the clip ends keep their per-frame labels.
+     */
+    public static final class Temporal {
+        private Labels before;        // frame t-2 (raw), or null
+        private Labels middle;        // frame t-1 (raw), or null
+        private MotionField middleMv; // vectors of frame t-1 (towards t-2)
+
+        /** Feeds frame t's raw labels and vectors; returns the final labels of frame t-1 (null at first). */
+        public Labels push(Labels raw, MotionField mv) {
+            Labels out = middle == null ? null : vote(before, middle, middleMv, raw, mv);
+            before = middle;
+            middle = raw;
+            middleMv = mv;
+            return out;
+        }
+
+        /** Final labels of the last frame pushed (null if nothing was pushed). */
+        public Labels flush() {
+            return middle == null ? null : vote(before, middle, middleMv, null, null);
+        }
+
+        static Labels vote(Labels prev, Labels cur, MotionField curMv, Labels next, MotionField nextMv) {
+            int cols = cur.cols();
+            int rows = cur.rows();
+            byte[] out = new byte[cols * rows];
+            for (int i = 0; i < out.length; i++) {
+                int cx = i % cols;
+                int cy = i / cols;
+                byte c = cur.id()[i];
+                byte p = prev == null ? c : prev.id()[shifted(cx, cy, curMv.dx()[i], curMv.dy()[i], cols, rows)];
+                byte n = next == null ? c : next.id()[shifted(cx, cy, -nextMv.dx()[i], -nextMv.dy()[i], cols, rows)];
+                int votes = (c != 0 ? 1 : 0) + (p != 0 ? 1 : 0) + (n != 0 ? 1 : 0);
+                out[i] = votes >= 2 ? (c != 0 ? c : p != 0 ? p : n) : 0;
+            }
+            return new Labels(cols, rows, out);
+        }
+
+        /** Block index containing the center of block (cx, cy) moved by (dx, dy), clamped to the grid. */
+        private static int shifted(int cx, int cy, int dx, int dy, int cols, int rows) {
+            int x = Math.floorDiv(cx * Types.MB + Types.MB / 2 + dx, Types.MB);
+            int y = Math.floorDiv(cy * Types.MB + Types.MB / 2 + dy, Types.MB);
+            return Math.min(rows - 1, Math.max(0, y)) * cols + Math.min(cols - 1, Math.max(0, x));
+        }
+    }
+
+    /**
+     * Per-frame facts for the stats CSV (frame 0 copies frame 1, 03 D4).
+     *
+     * @param frame        frame index
+     * @param camera       accepted camera model
+     * @param inlierRatio  share of reliable blocks the camera model explains
+     * @param reliablePct  share of blocks trusted for the camera fit
+     * @param rawFgPct     foreground share before the temporal vote
+     * @param fgPct        final foreground share
+     * @param regions      distinct foreground ids in the final labels
+     * @param meMs         motion search time
+     * @param segMs        camera fit + labelling + vote time
+     */
+    public record FrameStats(int frame, GlobalMotion.Kind camera, double inlierRatio, double reliablePct,
+                             double rawFgPct, double fgPct, int regions, double meMs, double segMs) {
+    }
+
+    /**
+     * The whole P1 pipeline for one clip, streamed frame by frame (never holds the clip): motion
+     * search seeded with the previous field and camera vector, reliability, camera fit, candidate
+     * gate, grouping, fill, temporal vote. Feed padded Y planes in order; final labels come out one
+     * frame behind (two at the start: frame 0 copies frame 1).
+     */
+    public static final class Run {
+        private final int w;
+        private final int h;
+        private final SegConfig sc;
+        private final GlobalMotion.GmConfig gc;
+        private final MotionEstimator.HierParams hp;
+        private final Temporal temporal = new Temporal();
+        private final java.util.List<FrameStats> stats = new java.util.ArrayList<>();
+        private final java.util.ArrayDeque<double[]> pending = new java.util.ArrayDeque<>();
+        private int[] prevY;
+        private MotionField prevField;
+        private int[] hint = {0, 0};
+        private int t = -1;
+
+        public Run(int w, int h, SegConfig sc, GlobalMotion.GmConfig gc, MotionEstimator.HierParams hp) {
+            this.w = w;
+            this.h = h;
+            this.sc = sc;
+            this.gc = gc;
+            this.hp = hp;
+        }
+
+        /** Feeds the next frame's padded Y plane; returns final labels now ready, in frame order. */
+        public java.util.List<Labels> push(int[] y) {
+            t++;
+            java.util.List<Labels> ready = new java.util.ArrayList<>();
+            if (prevY != null) {
+                long t0 = System.nanoTime();
+                MotionEstimator.Result me = MotionEstimator.hierarchical(y, prevY, w, h, hp, prevField, hint[0], hint[1]);
+                long t1 = System.nanoTime();
+                boolean[] rel = reliable(y, w, h, me, sc);
+                GlobalMotion.Model cam = GlobalMotion.fit(me.field(), rel, w, h, gc);
+                Labels raw = fill(group(me.field(), foregroundEligible(y, prevY, w, h, me, cam, sc), cam, sc), sc);
+                Labels fin = temporal.push(raw, me.field());
+                long t2 = System.nanoTime();
+                pending.add(new double[] {t, cam.kind().ordinal(), cam.inlierRatio(), 100.0 * count(rel) / rel.length,
+                        pct(raw), (t1 - t0) / 1e6, (t2 - t1) / 1e6});
+                emit(fin, ready);
+                prevField = me.field();
+                hint = cam.centerVector(w, h);
+            }
+            prevY = y;
+            return ready;
+        }
+
+        /** Labels of the last frame (and of frame 0 for a 2-frame clip). Call once at the end. */
+        public java.util.List<Labels> finish() {
+            java.util.List<Labels> ready = new java.util.ArrayList<>();
+            emit(temporal.flush(), ready);
+            return ready;
+        }
+
+        public java.util.List<FrameStats> stats() {
+            return stats;
+        }
+
+        private void emit(Labels fin, java.util.List<Labels> ready) {
+            if (fin == null) {
+                return;
+            }
+            double[] p = pending.poll();
+            FrameStats fs = new FrameStats((int) p[0], GlobalMotion.Kind.values()[(int) p[1]], p[2], p[3], p[4],
+                    pct(fin), regions(fin), p[5], p[6]);
+            if (fs.frame() == 1) {
+                ready.add(fin);   // frame 0 reuses frame 1's labels (03 D4)
+                stats.add(new FrameStats(0, fs.camera(), fs.inlierRatio(), fs.reliablePct(), fs.rawFgPct(), fs.fgPct(), fs.regions(), 0, 0));
+            }
+            ready.add(fin);
+            stats.add(fs);
+        }
+    }
+
+    static int count(boolean[] b) {
+        int n = 0;
+        for (boolean v : b) {
+            n += v ? 1 : 0;
+        }
+        return n;
+    }
+
+    static double pct(Labels l) {
+        int n = 0;
+        for (byte b : l.id()) {
+            n += b != 0 ? 1 : 0;
+        }
+        return 100.0 * n / l.id().length;
+    }
+
+    static int regions(Labels l) {
+        boolean[] seen = new boolean[256];
+        int k = 0;
+        for (byte b : l.id()) {
+            int v = b & 0xFF;
+            if (v != 0 && !seen[v]) {
+                seen[v] = true;
+                k++;
+            }
+        }
+        return k;
+    }
+
+    /**
      * 4-connected components of {@code cand} in fixed scan order (breadth first, int queue). Groups
      * of at least {@code minSize} blocks get ids 1, 2, ... (capped at 255; later groups share 255).
      * Returns the number of groups kept.
