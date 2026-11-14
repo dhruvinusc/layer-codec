@@ -176,3 +176,48 @@ Technical source: repo `docs/DECISIONS.md` (P1-D*) and Project doc 03 (D2, D3, D
 - Cost or limitation: the baseline is a bit stronger than the prototype, which makes our later improvements look smaller, not bigger.
 - Say it in the presentation: "This is what you get if you just threshold leftover motion: the walker is found, but brick walls and fences light up too. Everything after this step exists to remove those."
 - Likely professor question: Why does the brick wall show up as moving? / Answer: Bricks repeat every few pixels, so some blocks pick a vector one brick away. That leftover is big but random in direction, which the direction-consistency rule in the next step removes.
+
+### P1-L13: Grouping blocks whose leftover motion agrees (and a looser gate for who may be foreground)
+- Date / window: Nov 13 to 14, Window A (P1-D15, P1-D16; Project decision D3 steps 3 to 5)
+- Brief says: foreground regions are contiguous and consistent in motion direction ("important!", B7); several moving regions are allowed (B8).
+- The problem in plain words: after removing the camera's motion, brick-wall and fence blocks still have leftover motion, but it points in random directions. A walker's blocks all move the same way.
+- Options we considered:
+  1. Keep any connected group of moving blocks (the naive baseline) : good, simple / bad, 11 to 25% of some frames lit up falsely.
+  2. Grow regions only through neighbours whose leftover motion agrees in size or direction : good, exactly the brief's rule / bad, needs thresholds.
+  3. Same rule, but only on blocks trusted for the camera fit (texture >= 100) : good, least noise / bad, removed the walkers too (Stairs walker: 0 blocks).
+- What we chose: option 2, with a looser entry gate (good match and texture >= 20) than the camera fit uses.
+- Why (plain words): a person in a dark jacket has few textured blocks, but our search already gives a flat block its neighbours' vector, so its leftover motion still tells the truth. The agreement rule removes the extra noise.
+- Proof: RESULTS "P1.6" (naive vs steps A and B; Stairs f173 walker 0 -> 222 blocks); `SegmenterGroupTest` (two touching people moving opposite ways stay separate; random-direction patch mostly dropped).
+- Cost or limitation: a few aligned noise blocks can still chain into a small region; the 2-of-3 frame vote (P1.8) removes most of those.
+- Say it in the presentation: "Neighbouring blocks only join the same object if they move the same way, which is the brief's contiguity and consistency rule written as code."
+- Likely professor question: Why not just raise the motion threshold? / Answer: Brick aliases have large leftover motion, often larger than the walker's, so a threshold cannot separate them. Their direction is random, and that is what gives them away.
+
+### P1-L14: Measuring how scattered a region's motion is, robustly
+- Date / window: Nov 14, Window A (P1-D17)
+- Brief says: silent.
+- The problem in plain words: we drop regions whose blocks disagree too much. A walker's legs move about twice as fast as his torso, and a couple of limb blocks have wild vectors.
+- Options we considered:
+  1. Average spread (root mean square), cap 3 px : good, standard / bad, three wild blocks out of 200 rejected the whole walker on Stairs.
+  2. Median spread, cap 2 px : good, ignores a few wild blocks / bad, still rejected the SAL walker (torso 9 px, legs 20 px).
+  3. Median spread, cap 3 px : good, keeps both walkers / bad, a noisy patch whose majority agrees can pass.
+- What we chose: option 3.
+- Why (plain words): a median is not moved by a handful of bad blocks, and 3 px allows a person's torso and legs to move at different speeds while still rejecting patches that point every which way.
+- Proof: RESULTS "P1.6" (Stairs f173 walker 0 -> 222 blocks; SAL f218 walker 0 at 2 px, 88 at 3 px).
+- Cost or limitation: video2 foreground rose (8 to 12% at its peak frames) because more tree and fence regions also pass; the camera test and the frame vote target those.
+- Say it in the presentation: "I use a median, not an average, so two bad blocks on an ankle cannot throw away the whole person."
+- Likely professor question: Why 3 px? / Answer: It was the smallest cap that kept the walkers on both 1080p clips. All thresholds get a final joint tuning pass on all four clips.
+
+### P1-L15: Asking "could the camera explain this block?"
+- Date / window: Nov 14, Window A (P1-D18)
+- Brief says: classification from motion only (B9).
+- The problem in plain words: on a repeating brick wall the search can lock a whole patch onto the same wrong vector, one brick over. Those wrong vectors agree with each other, so the agreement rule cannot catch them.
+- Options we considered:
+  1. Accept them as foreground : good, no extra work / bad, visible false patches on SAL.
+  2. Bigger smoothness penalty in the search : good, fixes some / bad, also blurs real object edges everywhere.
+  3. For each candidate, measure how well the camera's own vector matches it; if almost as well as its best vector, call it background : good, uses only motion and match error / bad, 9 extra block comparisons per block.
+- What we chose: option 3 (slack: 1 grey level per pixel, or 15% of the block's best error).
+- Why (plain words): on a repeating texture several vectors match equally well, including the camera's, so the block has no evidence of its own motion. A walker matches badly at the camera's vector, so he stays.
+- Proof: RESULTS "P1.6" step D (SAL f218 5.6% -> 3.7%, video1 f259 6.2% -> 3.5%); `SegmenterCameraTest` (a striped patch with consistent aliases is fully removed; a block moving 10 px against the camera is kept).
+- Cost or limitation: an object moving slowly over a repeating texture could be called background; small brick patches still survive on SAL.
+- Say it in the presentation: "Before I call a block foreground, I check whether the background's motion would explain it just as well. If it would, there is no evidence it moved on its own."
+- Likely professor question: Is that still classification from motion only? / Answer: Yes. It compares two motion hypotheses for the same block using the match error, the same quantity the motion search itself uses. No colour, shape or content rules.

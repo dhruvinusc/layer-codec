@@ -159,3 +159,21 @@ The VM reaches GitHub but not Maven Central or services.gradle.org.
 1. P3.4 + P3.5: `./gradlew build` then `./mydecoder out/p3/SAL_2_5.cmp data/SAL.mp4`: press s, z, drag, d, left arrow 35 times, q. Reply "view ok" or what looked wrong; also whether the window fits the screen.
 2. P3.4b: `bash out/p3/run4.sh` again; compare whole-clip late % with run 4 (4 workers averaged 3.5%; goal under 2%).
 3. P3.6: `./mydecoder data/SAL.mp4` should print "error: not a .cmp file ..." and exit 1 (echo $?).
+- [B/P2] 2026-11-13 Window B: P2 decision log is owned and committed by Window C (6f1c897, P2-L1..L15). B's uncommitted duplicate draft out/decision-log-draft/P2-compression.md (created by B in this session, never committed) deleted. Window B has no open work; P2.X explain-back is with Dhruvin and the Tutor.
+
+## 2026-11-13, Window A (P1, fresh chat)
+- [A/P1] Sandbox rebuilt (Temurin 21.0.9 from the recipe); runner script compiles main + tests into a scratch dir. Background jobs do not survive between device_bash calls in this sandbox: run long tools in the foreground, one clip per call (under 3 minutes each).
+- [A/P1] Delete permission granted in this chat ONLY so git can remove its own lock/temp files after Window A commits (00 section 2a). The first commit (0c7c64b) ran before the grant and left `.git/HEAD.lock` and `.git/objects/maintenance.lock`; Dhruvin cleared them. Window A has deleted no files.
+- [A/P1] PM answers to the Nov 12 parcel logged in DECISIONS (thresholds in HierParams/SegConfig/GmConfig; SAL 89.8% accepted with real misses beside it; `--at` ok; ffmpeg pipe for debug mp4 ok); decision log P1-L10.
+- [A/P1] P1.5 done: `GlobalMotion` (RANSAC homography, Hartley normalization, affine then translation fallback, corner sanity check, seed 576) + `GlobalMotionTest` 9 tests (0c7c64b). `Segmenter.residuals`, `Segmenter.naive`, `Segmenter.components` (4-connected BFS, scan order) + `SegmenterNaiveTest` 4 tests. `VizSeg --cam-stats [--step k]`, `--naive`, `--sheet`. 172/172 green (8968dd7).
+- [A/P1] Evidence: RESULTS "P1.5 camera motion" (homography on 1679 of 1680 pairs, mean inliers video1 0.77, video2 0.74, Stairs 0.90, SAL 0.85; at or above doc 05) and "P1.5 naive baseline overlays" (docs/img/naive_*.jpg, saved before tuning, checked by eye). Decision log P1-L11, P1-L12. SPEC_CHECKLIST B6, B11 annotated partial.
+- [A/P1] Known: video2 frame 30 falls back to translation (18% inliers); frames 60, 150, 180 near 38%. Handled by the P1.8 temporal vote.
+- [A/P1] Note: `docs/WORKLOG.md` had a staged one-line [B/P2] entry; PM approved (Nov 14) committing it together with this entry (Window B is closed).
+- [A/P1] NEXT: P1.6 residual grouping (consistency rule, size and coherence filter) in Segmenter; compare against the naive sheets.
+
+## 2026-11-14, Window A (P1)
+- [A/P1] P1.5 accepted by PM. P1.6 approach approved.
+- [A/P1] P1.6 done: `Segmenter.eligible`, `cameraExplains`, `foregroundEligible`, `group` (consistency growth), robust `spread`; `SegConfig` extended (candMinVar 20, camSlackMad 1.0, camSlackRel 0.15, resPx 2.5, consPx 2, consMinMag 4, consAngleDeg 30, minRegionBlocks 4, minRegionFrac 0.002, maxSpreadPx 3). `VizSeg --seg`. Tests `SegmenterGroupTest` (7), `SegmenterCameraTest` (3). 185/185 green.
+- [A/P1] Evidence: RESULTS "P1.6" (per-step foreground table, walker diagnostics), `docs/img/p16_*.jpg` checked by eye. DECISIONS P1-D15..D18, decision log P1-L13..L15.
+- [A/P1] Mac connection dropped twice on Nov 13 (sleep). Keep `caffeinate -dims` running.
+- [A/P1] NEXT: Stairs f69 miss (time box 2 h, else known limit), then P1.7 fill.

@@ -27,7 +27,7 @@ import javax.imageio.ImageIO;
  * its own color (red, blue, ...), and with {@code --arrows} each macroblock shows its motion
  * vector drawn in the direction the content moved, (-dx, -dy) per 03 D12.
  *
- * <p>{@code --naive} labels with the naive baseline (P1.5) and {@code --sheet f.jpg} writes the frames
+ * <p>{@code --naive} labels with the naive baseline (P1.5), {@code --seg} with the current segmenter, and {@code --sheet f.jpg} writes the frames
  * side by side at half size. {@code --cam-stats [--step k]} fits the camera model on every k-th frame
  * pair and writes {@code <out>/<clip>_cam.csv}. {@code --me-check} compares search methods (P1.3).
  *
@@ -68,21 +68,23 @@ public final class VizSeg {
                 int[] y = ColorConv.luma(p);
                 if (prevY != null && contains(at, t)) {
                     long t0 = System.nanoTime();
-                    MotionEstimator.Result me = o.naive
+                    MotionEstimator.Result me = o.naive || o.seg
                             ? MotionEstimator.hierarchical(y, prevY, p.width(), p.height(), MotionEstimator.HierParams.DEFAULT, null, 0, 0)
                             : MotionEstimator.fullSearch(y, prevY, p.width(), p.height(), o.range);
                     double ms = (System.nanoTime() - t0) / 1e6;
                     int nb = me.field().cols() * me.field().rows();
                     Labels labels = new Labels(me.field().cols(), me.field().rows(), new byte[nb]);
                     String extra = "";
-                    if (o.naive) {
+                    if (o.naive || o.seg) {
                         boolean[] ok = Segmenter.reliable(y, p.width(), p.height(), me, Segmenter.SegConfig.DEFAULT);
                         GlobalMotion.Model cam = GlobalMotion.fit(me.field(), ok, p.width(), p.height(), GlobalMotion.GmConfig.DEFAULT);
-                        labels = Segmenter.naive(y, p.width(), p.height(), me.field(), cam, Segmenter.SegConfig.DEFAULT);
+                        labels = o.naive
+                                ? Segmenter.naive(y, p.width(), p.height(), me.field(), cam, Segmenter.SegConfig.DEFAULT)
+                                : Segmenter.group(me.field(), Segmenter.foregroundEligible(y, prevY, p.width(), p.height(), me, cam, Segmenter.SegConfig.DEFAULT), cam, Segmenter.SegConfig.DEFAULT);
                         extra = String.format(", %s inliers %.2f, foreground %.1f%%", cam.kind(), cam.inlierRatio(), 100.0 * foreground(labels) / nb);
                     }
                     int[] rgb = render(p, labels, o.arrows ? me.field() : null);
-                    String tag = o.naive ? "_naive" : "";
+                    String tag = o.naive ? "_naive" : o.seg ? "_seg" : "";
                     Path png = o.out.resolve(String.format("%s%s_f%04d.png", name, tag, t));
                     write(rgb, p.width(), p.height(), info.width(), info.height(), png);
                     if (o.sheet != null) {
@@ -386,11 +388,11 @@ public final class VizSeg {
     }
 
     private record Options(Path clip, int[] at, boolean arrows, int range, Path out, boolean meCheck,
-                           boolean naive, boolean camStats, int step, Path sheet) {
+                           boolean naive, boolean seg, boolean camStats, int step, Path sheet) {
         static Options parse(String[] a) {
             if (a.length < 1) {
                 System.err.println("usage: VizSeg <clip> [--at f1,f2,..] [--arrows] [--range R] [--out dir] [--me-check]"
-                        + " [--naive [--sheet file.jpg]] [--cam-stats [--step k]]");
+                        + " [--naive | --seg [--sheet file.jpg]] [--cam-stats [--step k]]");
                 System.exit(2);
             }
             int[] at = null;
@@ -399,6 +401,7 @@ public final class VizSeg {
             Path out = Path.of("out", "viz");
             boolean meCheck = false;
             boolean naive = false;
+            boolean seg = false;
             boolean camStats = false;
             int step = 1;
             Path sheet = null;
@@ -410,6 +413,7 @@ public final class VizSeg {
                     case "--out" -> out = Path.of(a[++i]);
                     case "--me-check" -> meCheck = true;
                     case "--naive" -> naive = true;
+                    case "--seg" -> seg = true;
                     case "--cam-stats" -> camStats = true;
                     case "--step" -> step = Integer.parseInt(a[++i]);
                     case "--sheet" -> sheet = Path.of(a[++i]);
@@ -419,7 +423,7 @@ public final class VizSeg {
             if (step < 1) {
                 throw new IllegalArgumentException("--step must be >= 1");
             }
-            return new Options(Path.of(a[0]), at, arrows, range, out, meCheck, naive, camStats, step, sheet);
+            return new Options(Path.of(a[0]), at, arrows, range, out, meCheck, naive, seg, camStats, step, sheet);
         }
     }
 }

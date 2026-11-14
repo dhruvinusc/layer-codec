@@ -244,3 +244,20 @@ Images: `docs/img/naive_video1.jpg`, `naive_video2.jpg`, `naive_Stairs.jpg`, `na
   - Run B (about 14:22): bench 52.2 fps (4 workers), 64.1 (6). 4a collapsed (100 dropped, mean wait 23.5 ms). Its trace shows two whole-process freezes: a 1.36 s wait at frame 86 and a 1.84 s gap between paints at frame 147 with no decoder wait; GC max 7.7 ms. So the process itself was stopped (most likely system memory swapping on a 94% full disk), not slow decoding. 6b, the cleanest run: 0 dropped, 5 late (2.5%), +0.07%. 4b quit early with q.
 - P3.4b verdict: not decided yet. Next timing runs only on a quiet Mac (00/06 timing rule) after freeing disk (D9).
 - P3.4c check (Nov 13, about 14:38, back to back, traces out/p3/t_*.csv): SAL_2_5 60 frames WITHOUT the original: 5 dropped (frames 15 to 23), 9 late, +0.23%, max wait 51.5 ms (a short hiccup in the first run after the build). WITH the original (read ahead on its own thread): 0 dropped, 1 late (1.7%), 30.0 fps, +0.14%, max wait 23.7 ms. The background reader removes the drops seen with the first version (13 to 45%). An earlier P3.4c run at 14:32 (65% dropped, mean decoder wait 55.4 ms) came straight after a build on a loaded Mac and is not counted.
+
+### P1.6 grouping [A/P1] (sandbox; same frames as the naive sheets: 20/50/80% of each clip)
+`VizSeg <clip> --seg --sheet ...`. Candidates = eligible blocks (good match, texture >= 20) not explained by the camera, residual > 2.5 px; 4-connected growth where a neighbour joins only if its residual is within 2 px, or both are >= 4 px long and within 30 degrees; regions kept if >= max(4, 0.2% of blocks) and robust spread (median distance from the median residual) <= 3 px.
+
+Foreground % per frame (three frames per clip), as each change was added:
+
+| Step | video1 | video2 | Stairs | SAL |
+|---|---|---|---|---|
+| Naive (P1.5) | 2.4 / 7.6 / 3.8 | 23.5 / 24.8 / 6.3 | 2.4 / 5.5 / 8.6 | 12.1 / 11.1 / 3.8 |
+| A: consistency grouping, reliable blocks only, RMS spread <= 3 | 1.5 / 4.5 / 1.6 | 7.6 / 7.2 / 2.7 | 0.0 / 0.2 / 0.4 | 1.3 / 1.5 / 0.6 |
+| B: + looser candidate gate (texture >= 20) | 2.9 / 5.8 / 2.2 | 8.4 / 9.7 / 2.6 | 0.2 / 0.2 / 0.0 | 1.6 / 1.0 / 1.2 |
+| C: + robust spread (median), cap 3 px | 4.2 / 6.2 / 3.1 | 14.5 / 11.8 / 4.3 | 0.2 / 3.6 / 2.1 | 2.7 / 5.6 / 1.5 |
+| D: + camera-explained test (final P1.6) | 3.1 / 3.5 / 1.9 | 12.5 / 11.3 / 3.4 | 0.0 / 3.0 / 1.9 | 1.9 / 3.7 / 1.2 |
+
+Region-level checks (diagnostic on the walker's block rectangle): Stairs f173, walker blocks kept: A 0, C 222 of 559. SAL f218, walker blocks kept with robust spread cap 2 px: 0; cap 3 px: 88 (torso residual about 9 px, legs 16 to 25 px, real articulated motion).
+
+Reading (images `docs/img/p16_*.jpg`, checked by eye): step A removed most false foreground but also the walkers, because their flat clothing failed the texture test (Stairs f173: 225 of 559 walker blocks textured, 539 well matched). B and C bring the walkers back. D removes 15 to 44% of what remains on SAL and video1 (brick and stripe aliases that match the camera's vector as well as their own). Result vs naive: SAL brick-wall false foreground down from 11 to 12% to 1 to 4%, walker found in all three SAL frames; video2 halved; Stairs walker found in f173 and f276. Remaining: Stairs f69 walker missed (small and far, see P1.6 note below), some brick patches on SAL, video2 trees and fence (parallax).
