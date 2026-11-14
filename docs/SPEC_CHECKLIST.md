@@ -11,17 +11,17 @@ Due Wed Dec 2, 2026.
 - [x] A4 Decoder needs nothing except the .cmp (all metadata in the file) ([C/P3] header carries size, padded size, fps, frame count, n1, n2 (03 D7); all playback, bench and error runs use the .cmp alone, original mp4 optional for side by side only; CmpFormatTest.headerIs48BytesWithPatchedCountsAndZeroReserved, DecoderMainErrorsTest)
 
 ## B. Part 1: Segmentation (encoder)
-- [ ] B1 Frame 0 treated as an I frame
-- [ ] B2 Every later frame split into 16x16 macroblocks
-- [ ] B3 One motion vector per macroblock, computed against the PREVIOUS frame (partial: MotionEstimator.fullSearch, MotionEstimatorTest.recoversKnownShiftsIncludingNegative; wired per frame in P1.10)
-- [ ] B4 Block MAD matching, brute force or a fast search (FME is "even better") (partial: brute force done, MotionEstimatorTest.matchesTextbookOracleOnMixedContent, RESULTS P1.1; fast search P1.3)
-- [ ] B5 Search uses ONE component (Y preferred, R allowed) (partial: fullSearch takes the Y plane from ColorConv.luma; wired in P1.10)
-- [ ] B6 Background = near-zero MVs (static camera) or one constant MV (moving camera) (partial [A/P1.5]: camera model generalises the constant MV to a homography, GlobalMotionTest, RESULTS P1.5; residual labelling in P1.6)
-- [ ] B7 Foreground regions are (a) contiguous and (b) consistent in MV direction ("important!")
-- [ ] B8 Several independently moving regions supported
-- [ ] B9 Classification from motion only, not content
-- [ ] B10 Every macroblock of every frame has a foreground/background label
-- [ ] B11 Visual demarcation like the brief's figure (green background, red/blue foreground) (partial [A/P1.5]: VizSeg tint with naive labels, docs/img/naive_*.jpg; final labels P1.9)
+- [x] B1 Frame 0 treated as an I frame [A/P1.10]: frame 0 is coded on its own (every baseline frame is intra), and its labels reuse frame 1 (03 D4): SegmenterTemporalTest.runEmitsOneLabelSetPerFrameFrameZeroCopiesFrameOneAndIsDeterministic
+- [x] B2 Every later frame split into 16x16 macroblocks [A/P1.10]: Types.MB = 16, padded grid 30x53 / 120x68 (RESULTS "P1.10"), MotionEstimatorTest
+- [x] B3 One motion vector per macroblock, computed against the PREVIOUS frame [A/P1.10]: MotionEstimator.fullSearch / hierarchical against frame t-1, Segmenter.Run feeds consecutive frames; MotionEstimatorTest, RESULTS "P1.1", "P1.3"
+- [x] B4 Block MAD matching, brute force or a fast search (FME is "even better") [A/P1.10]: full search (oracle) + hierarchical 3-level default; agreement 89.8 to 95.8%, real misses 1.6 to 4.0%; RESULTS "P1.3", P1-L7, P1-L10
+- [x] B5 Search uses ONE component (Y preferred, R allowed) [A/P1.10]: Y from ColorConv.luma only (Segmenter.Run, VizSeg --stats)
+- [x] B6 Background = near-zero MVs (static camera) or one constant MV (moving camera) [A/P1.10]: camera motion generalised from one constant MV to a RANSAC homography (all 4 clips have a moving camera); background = residual within 2.5 px or explained by the camera; GlobalMotionTest, RESULTS "P1.5", P1-L11, P1-L15
+- [x] B7 Foreground regions are (a) contiguous and (b) consistent in MV direction ("important!") [A/P1.10]: 4-connected growth only through neighbours whose residuals agree, robust spread filter; SegmenterGroupTest, RESULTS "P1.6", P1-L13, P1-L14
+- [x] B8 Several independently moving regions supported [A/P1.10]: SegmenterGroupTest.touchingPatchesMovingOppositeWaysBecomeTwoRegions; up to 7.53 regions/frame on video2 (RESULTS "P1.10")
+- [x] B9 Classification from motion only, not content [A/P1.10]: inputs are vectors, match errors (SAD) and the camera model; no colour, shape or detector; texture only gates whether a vector is trusted (P1-L9)
+- [x] B10 Every macroblock of every frame has a foreground/background label [A/P1.10]: labels files cover every frame (518, 383, 346, 437 frames), LabelsIOTest, RESULTS "P1.10"
+- [x] B11 Visual demarcation like the brief's figure (green background, red/blue foreground) [A/P1.10]: VizSeg tint, docs/img/p1_final_*.jpg (and naive_*, p16_* to p19_* for before/after)
 
 ## C. Part 2: Compression (encoder)
 - [ ] C1 Frame split into 8x8 blocks; each inherits its 16x16 macroblock's label (partial [B/P2]: fake labels; final check after wire-up. CmpFormat.blockTypes, CmpFormatTest.blockTypeOf8x8IsItsMacroblockLabel, FrameEncoderTest.blockTypesFollowLabelsAndRegionIdsCollapseToOne)

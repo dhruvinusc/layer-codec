@@ -59,6 +59,12 @@ Reading: SAL's camera pans 6 to 8 px per frame and Stairs 5 to 6 px, matching do
 
 | Clip | ME ms/frame full | ME ms/frame hier | Agreement within 1 px | Camera model mix | Mean inlier ratio | Mean foreground % | Regions/frame |
 |---|---|---|---|---|---|---|---|
+| video1 | 64 (R16) | 37 | 91.7% (real misses 4.0%) | homography 517 of 517 | 0.774 | 2.70% | 2.99 |
+| video2 | 224 (R32) | 37 | 95.8% (real misses 1.6%) | homography 381, translation 1 | 0.737 | 6.95% | 7.53 |
+| Stairs | 340 (R16) | 193 | 91.8% (real misses 3.0%) | homography 345 of 345 | 0.904 | 1.51% | 1.21 |
+| SAL | 383 (R16) | 193 | 89.8% (real misses 4.0%) | homography 436 of 436 | 0.853 | 1.07% | 1.76 |
+
+Final P1 settings, whole clips, sandbox timings (Mac numbers come from the quiet-Mac run, D13). Details: RESULTS "P1.3" (search), "P1.5" (camera), "P1.8" and "P1.9" (labels).
 
 ## P2 compression (Window B)
 
@@ -390,3 +396,16 @@ Sweep, mean final foreground % on the sweep frames:
 
 Whole clips with the filter at 30 degrees: video2 final foreground 6.95% -> 4.15% (frames with none 1 -> 8); video1 2.70% -> 2.24% (frames with none 16 -> 51). Eye check: video2 tree and fence regions gone, joggers unchanged (`docs/img/p19_parallax_on_video2.jpg`); video1 mostly loses false crosswalk-stripe regions, but on f9 also part of a real pedestrian (`docs/img/p19_parallax_video1_f9_50_131_off.jpg` vs `_on.jpg`). Two existing unit tests fail with it on, both exactly the risk: a real mover whose residual runs along the camera's flow (anything moving against the camera's direction) is deleted.
 Status: code and 4 tests committed, default OFF (labels unchanged). It conflicts with the adopted principle in 03 D3 ("lean foreground when unsure"), so it waits for a DECISION REQUEST (WORKLOG).
+
+### P1.10 final labels and determinism [A/P1] (sandbox; final settings, parallax filter OFF)
+`VizSeg <clip> --stats --labels --sheet docs/img/p1_final_<clip>.jpg`: the labels file holds one byte per macroblock for every frame of the clip (B10).
+
+| Clip | Frames labelled | Grid | Final foreground (max) | Frames with no foreground | Labels SHA-256 (first 16) |
+|---|---|---|---|---|---|
+| video1 | 518 | 30 x 53 | 2.70% (17.5%) | 16 | af10a59e22e6684d |
+| video2 | 383 | 30 x 53 | 6.95% (22.8%) | 1 | f568f6ac25924709 |
+| Stairs | 346 | 120 x 68 | 1.51% (5.9%) | 79 | 0ce96f5a6a177ef7 |
+| SAL | 437 | 120 x 68 | 1.07% (2.9%) | 11 | 7f203b4c6ce044a7 |
+
+Determinism: video2 run twice in separate JVMs, both `f568f6ac259247095f3790e652337f0478701d7cb0b250e6854a03236de5a6f5`, files byte-identical (`cmp`).
+Parallax slide pair (same frames, filter off vs on at 30 degrees): `docs/img/p1_parallax_video2_off.jpg`, `docs/img/p1_parallax_video2_on.jpg` (whole clip 6.95% vs 4.15%).

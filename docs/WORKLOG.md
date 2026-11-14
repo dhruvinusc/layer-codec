@@ -209,3 +209,7 @@ One command does all of them: `bash out/p3/quiet_run.sh` (git-ignored script, ab
 - Against: it deletes real movers going against the camera's direction (part of one pedestrian on video1 f9; video1 empty frames 16 -> 51; two unit tests). It reverses 03 D3's "lean foreground when unsure".
 - Options: (A) keep OFF (recommended: matches D3; the cost is bits, not visible blur); (B) ON at 30 degrees; (C) ON only for clips where the camera moves fast (adds a rule, not recommended).
 - Impact either way: one constant; labels and .cmp change only if ON. P1.10 and wire-up do not wait on it.
+- [A/P1] 2026-11-14 PM decision: parallax filter OFF by default, kept as `VizSeg --parallax DEG`; slide pair docs/img/p1_parallax_video2_off.jpg / _on.jpg; P1-L20 marked DECIDED.
+- [A/P1] 2026-11-14 P1.10 done: `LabelsIO` + `LabelsIOTest` (6a14a7f), VizSeg `--labels`. Final labels for all 4 clips (out/viz/final/*.labels, git-ignored), determinism proven on video2 (two runs, same SHA-256, byte-identical). RESULTS summary table + "P1.10", docs/img/p1_final_*.jpg. SPEC_CHECKLIST B1 to B11 ticked with evidence. END-OF-PART REPORT + wire-up notes + quiet-Mac commands: docs/p1_report.md. 216/216.
+- [A/P1] Mac check queued for Dhruvin (quiet Mac, D13): commands in docs/p1_report.md "Quiet-Mac run for Window A". Expected SAL hash 7f203b4c6ce044a7...
+- [A/P1] NEXT: wire-up W1 (EncoderMain per docs/p1_report.md), W2 encode all 4 clips, tick C1.
