@@ -49,6 +49,8 @@ final class OriginalVideo implements AutoCloseable {
     private int reopens;
     private int peakKept;
     private volatile VideoIO.Reader reader;
+    /** Test hook: runs on the reader thread between claiming frame idx and storing it. */
+    volatile java.util.function.IntConsumer afterClaim = idx -> { };
 
     OriginalVideo(Path mp4, int width, int height) throws IOException {
         Types.VideoInfo info = VideoIO.probe(mp4);
@@ -156,7 +158,16 @@ final class OriginalVideo implements AutoCloseable {
         }
     }
 
-    /** Files the frame just read, unless a restart made it stale. Packs outside the lock. */
+    /**
+     * Files the frame just read, unless a restart made it stale. Packs outside the lock.
+     *
+     * <p>{@code next} advances only once the frame is in {@code frames} (or deliberately
+     * skipped), never while it is being packed. So for the player, "k is missing and k < next"
+     * always means "k was stored and later dropped", which is what triggers a restart. The first
+     * version advanced {@code next} before packing; a request for exactly that frame during the
+     * packing then looked like a dropped frame and restarted the mp4 for nothing (the flaky
+     * OriginalVideoTest, about 1 run in 12, Nov 14).
+     */
     private void store(boolean ok, Types.Frame f) {
         int idx;
         int[] buf;
@@ -169,12 +180,14 @@ final class OriginalVideo implements AutoCloseable {
                 notifyAll();
                 return;
             }
-            idx = next++;
+            idx = next;
             if (idx < want - BEHIND) {
-                return; // catching up after a restart: too far behind the target to keep
+                next = idx + 1; // catching up after a restart: too far behind the target to keep
+                return;
             }
             buf = spare.isEmpty() ? new int[width * height] : spare.pop();
         }
+        afterClaim.accept(idx);
         int[] r = f.r();
         int[] g = f.g();
         int[] b = f.b();
@@ -186,6 +199,7 @@ final class OriginalVideo implements AutoCloseable {
                 return;
             }
             frames.put(idx, buf);
+            next = idx + 1;
             peakKept = Math.max(peakKept, frames.size());
             notifyAll();
         }

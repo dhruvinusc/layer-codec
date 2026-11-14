@@ -117,6 +117,43 @@ class OriginalVideoTest {
         o.close();
     }
 
+    @Test
+    void askingForAFrameWhileItIsBeingPackedDoesNotRestartTheMp4() throws Exception {
+        // Regression for the Nov 14 flake: hold the reader between claiming frame 6 and storing
+        // it, ask for frame 6 in exactly that window, and check that no restart happens.
+        try (OriginalVideo o = new OriginalVideo(clip, 32, 16)) {
+            java.util.concurrent.CountDownLatch claimed = new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+            o.afterClaim = idx -> {
+                if (idx == 6) {
+                    claimed.countDown();
+                    try {
+                        release.await();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            };
+            assertArrayEquals(truth.get(5), o.get(5));
+            assertTrue(claimed.await(5, java.util.concurrent.TimeUnit.SECONDS), "reader reached frame 6");
+            Thread asker = new Thread(() -> {
+                try {
+                    o.get(6);
+                } catch (Exception e) {
+                    throw new IllegalStateException(e);
+                }
+            });
+            asker.start();
+            Thread.sleep(50); // the asker is now waiting while frame 6 is claimed but not stored
+            assertEquals(0, o.reopens(), "a frame being packed must not look like a dropped frame");
+            release.countDown();
+            asker.join(5000);
+            assertFalse(asker.isAlive(), "the asker got frame 6");
+            assertArrayEquals(truth.get(6), o.get(6));
+            assertEquals(0, o.reopens());
+        }
+    }
+
     private static String ffmpeg() {
         String v = System.getenv("FFMPEG");
         return v == null || v.isBlank() ? "ffmpeg" : v;
