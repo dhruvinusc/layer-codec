@@ -267,3 +267,17 @@ Technical source: repo `docs/DECISIONS.md` (P1-D*) and Project doc 03 (D2, D3, D
 - Cost or limitation: the first and last frame are not smoothed; region colours in the overlay can change between frames because ids are not matched (the file stores only foreground or background, so this does not affect compression).
 - Say it in the presentation: "A block has to be foreground in two of three consecutive frames, and I follow its motion vector to find it in the neighbouring frames, so a person who moves a whole block per frame is still counted."
 - Likely professor question: Why 2 of 3 and not more frames? / Answer: Each extra frame adds a frame of delay and more chance of losing fast, short motions like a swinging leg. Two of three removes single-frame flicker, which was the problem we saw.
+
+### P1-L19: Tuning step 1: a looser "camera explains it" test, and a rejected shortcut
+- Date / window: Nov 14, Window A (P1-D23)
+- Brief says: silent on thresholds.
+- The problem in plain words: twelve thresholds, four very different clips, no ground-truth masks. Lower foreground is only better if the people stay.
+- Options we considered:
+  1. Tune each clip separately : good, best numbers / bad, not a real codec, and the grader may use other clips.
+  2. Change one setting at a time on all four clips, shortlist by foreground share, then judge whole clips by eye : good, honest / bad, slower.
+- What we chose: option 2. The sweep pointed at two changes; the combination (looser camera test plus minimum region of 8 blocks) halved video2's foreground but erased small joggers and a skateboarder, so it was rejected. The looser camera test alone kept the people.
+- Why (plain words): the camera test with 2 grey levels per pixel of slack removes more brick and fence patches that the camera's motion explains just as well, while a real mover still matches badly at the camera's vector.
+- Proof: RESULTS "P1.9 tuning, step 1" (sweep table, rejected option's empty-frame count 11 -> 132 on video1, whole-clip before/after); `docs/img/p19_step1_*.jpg`.
+- Cost or limitation: SAL loses the walker for the last 19 frames, where he reaches the frame edge; Stairs has 13 more empty frames, mostly where he is distant.
+- Say it in the presentation: "The numbers said one combination was best, but when I watched the clips it was deleting the joggers, so I kept only the change that removed false patches without touching people."
+- Likely professor question: How do you tune without ground truth? / Answer: Foreground share is the cost we can measure, and the pictures are the check. Every candidate setting was run on all four whole clips and rejected if it lost a person anywhere.

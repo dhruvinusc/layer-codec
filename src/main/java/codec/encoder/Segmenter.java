@@ -47,7 +47,7 @@ public final class Segmenter {
     public record SegConfig(int minTextureVar, int maxMatchMad, int candMinVar, double camSlackMad, double camSlackRel, int camWindow, double resPx, double consPx,
                             double consMinMag, double consAngleDeg, int minRegionBlocks,
                             double minRegionFrac, double maxSpreadPx, boolean dilate) {
-        public static final SegConfig DEFAULT = new SegConfig(100, 12, 20, 1.0, 0.15, 1, 2.5, 2.0, 4.0, 30.0, 4, 0.002, 3.0, false);
+        public static final SegConfig DEFAULT = new SegConfig(100, 12, 20, 2.0, 0.15, 1, 2.5, 2.0, 4.0, 30.0, 4, 0.002, 3.0, false);
     }
 
     /**

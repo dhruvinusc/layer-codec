@@ -296,3 +296,30 @@ Reading (`docs/img/p17_*.jpg`, checked by eye): vote and hole fill add 0 to 0.6 
 | SAL | 437 | homography 436 | 0.853 | 2.36% | 1.85% (4.6%) | 3.66 | 0 | 208 | 15.4 | 102 s |
 
 Reading: the vote removes 16 to 22% of foreground on video1, video2 and SAL (one-frame flicker), and almost nothing on Stairs, whose regions are already stable. Stairs' empty frames are 1 to 71 (the distant walker, P1.6 known limit) plus 4 short gaps. Speed: SAL motion + segmentation for the whole clip is 102 s in the sandbox, against the 3-minute target on the Mac. Images `docs/img/p18_*.jpg` (final labels): SAL walker in all three frames with smaller brick patches; video2 joggers only partly found, fence and trees still false; that is the main target for P1.9.
+
+### P1.9 tuning, step 1 [A/P1] (sandbox; all 4 clips together, never per clip)
+Sweep tool (scratch, not in repo): full pipeline incl. vote on the frames around 20/50/80% of each clip, one setting changed at a time from the P1.8 defaults, then combinations. Mean final foreground % over the three frames (lower is better only if the people stay, so every shortlisted setting was checked by eye on whole-clip runs).
+
+| Setting | video1 | video2 | Stairs | SAL | Verdict |
+|---|---|---|---|---|---|
+| P1.8 defaults | 1.78 | 6.79 | 1.61 | 2.01 | baseline |
+| resPx 2.0 / 3.0 | 2.01 / 1.68 | 8.11 / 6.10 | 1.61 / 1.61 | 2.02 / 2.00 | little effect |
+| spread cap 2.5 / 4 | 1.72 / 7.00 | 6.44 / 10.84 | 1.41 / 1.81 | 1.93 / 2.28 | 4 explodes; 3 kept |
+| min region 8 blocks | 1.51 | 4.15 | 1.61 | 2.01 | 480p clips only |
+| min region 0.4% | 1.51 | 4.78 | 1.42 | 1.53 | trims walkers on 1080p |
+| camera slack 2 levels/px | 1.55 | 5.81 | 1.60 | 1.25 | best single change |
+| candidate texture 50 | 3.08 | 8.03 | 1.18 | 1.83 | worse on 480p |
+| A: slack 2 + min 8 blocks | 1.38 | 3.27 | 1.60 | 1.25 | REJECTED by eye |
+
+Eye check, whole clips: A erased both joggers on video2 f306 and most of them on f191 while the false fence region survived, and lost the skateboarder on video1 (frames with no foreground: video1 11 -> 132). Slack 2 alone kept the people and removed false regions, so it is adopted: `SegConfig.camSlackMad` 1.0 -> 2.0.
+
+Whole clips after step 1 (`docs/img/p19_step1_*.jpg`):
+
+| Clip | Final foreground P1.8 -> step 1 | Max | Regions/frame | Frames with no foreground |
+|---|---|---|---|---|
+| video1 | 3.12% -> 2.70% | 17.5% | 2.99 | 11 -> 16 |
+| video2 | 7.71% -> 6.95% | 22.8% | 7.53 | 0 -> 1 |
+| Stairs | 1.59% -> 1.51% | 5.9% | 1.21 | 66 -> 79 (new: 14 to 16 and 47 to 64, the distant-walker stretch; 221, 232, 233) |
+| SAL | 1.85% -> 1.07% | 2.9% | 1.76 | 0 -> 11 (frames 409 to 427, walker at the right edge) |
+
+Reading: SAL now shows the walker in all three frames and one brick patch (f218) instead of five; video2's false fence region shrank and both joggers are found at f306. 120 to 190 more empty frames would have been the price of option A.
