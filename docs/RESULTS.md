@@ -409,3 +409,18 @@ Status: code and 4 tests committed, default OFF (labels unchanged). It conflicts
 
 Determinism: video2 run twice in separate JVMs, both `f568f6ac259247095f3790e652337f0478701d7cb0b250e6854a03236de5a6f5`, files byte-identical (`cmp`).
 Parallax slide pair (same frames, filter off vs on at 30 degrees): `docs/img/p1_parallax_video2_off.jpg`, `docs/img/p1_parallax_video2_on.jpg` (whole clip 6.95% vs 4.15%).
+
+## Wire-up (Window A)
+
+### W2 real encodes, all 4 clips at (n1, n2) = (2, 5) [A/W2] (sandbox, 4 cores; Mac times come from `./myencoder` on a quiet Mac)
+`java -cp <classes> codec.encoder.EncoderMain data/<clip>.mp4 2 5` (the same program `./myencoder` launches). Labels from the final P1 settings (parallax off). PSNR from `Psnr <mp4> <cmp>`, which also decodes every frame (decodability check).
+
+| Clip | Frames | Input mp4 | .cmp (zlib) | Foreground 8x8 blocks | Segmentation ms/frame | Compression ms/frame | Encode wall | PSNR all / fg / bg (dB, mean) |
+|---|---|---|---|---|---|---|---|---|
+| video1 | 518 | 3.6 MB | 65.9 MB | 2.70% | 39 | 14 | 28.7 s | 37.73 / 47.98 / 37.62 |
+| video2 | 383 | 2.7 MB | 86.7 MB | 6.94% | 40 | 20 | 23.6 s | 34.29 / 47.78 / 33.99 |
+| Stairs | 346 | 21.9 MB | 294.6 MB | 1.50% | 205 | 82 | 101.6 s | 35.30 / 48.12 / 35.24 |
+| SAL | 437 | 27.8 MB | 431.0 MB | 1.07% | 205 | 87 | 130.8 s | 34.38 / 47.53 / 34.34 |
+
+C1 check (scratch tool, reads each .cmp and the matching labels file): every 8x8 block_type equals the label of its 16x16 macroblock, 0 mismatches over 34.1 million blocks; frame counts match.
+Reading: the layer effect holds on real labels: foreground 13 to 14 dB above background on every clip (D5 evidence; the swapped (5,2) check comes with P3.R). The .cmp is 15 to 32 times the mp4 because baseline has no prediction between frames and no entropy coding beyond zlib (03 D7). E4: SAL encode 131 s in the sandbox; the Mac run plus decode decides E4.

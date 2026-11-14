@@ -24,7 +24,7 @@ Due Wed Dec 2, 2026.
 - [x] B11 Visual demarcation like the brief's figure (green background, red/blue foreground) [A/P1.10]: VizSeg tint, docs/img/p1_final_*.jpg (and naive_*, p16_* to p19_* for before/after)
 
 ## C. Part 2: Compression (encoder)
-- [ ] C1 Frame split into 8x8 blocks; each inherits its 16x16 macroblock's label (partial [B/P2]: fake labels; final check after wire-up. CmpFormat.blockTypes, CmpFormatTest.blockTypeOf8x8IsItsMacroblockLabel, FrameEncoderTest.blockTypesFollowLabelsAndRegionIdsCollapseToOne)
+- [x] C1 Frame split into 8x8 blocks; each inherits its 16x16 macroblock's label [A/W2]: real labels, all 4 clips encoded at (2,5); every 8x8 block_type in the .cmp equals its macroblock's label in out/viz/final/<clip>.labels, 0 mismatches over 34.1 million blocks (RESULTS "W2"); CmpFormatTest 8x8-inherits test
 - [x] C2 8x8 DCT on all three channels (R, G, B) ([B/P2] DctTest.matchesTextbookOracleOnRandomBlocks; FrameEncoder DCT per R, G, B; FrameEncoderTest.roundTripAtN0IsNearlyExact; RESULTS.md 'P2.6 CodecHarness first real-clip runs' (n=0 59 dB on video2 and SAL))
 - [x] C3 Uniform quantization, every table entry 2^n (n1 foreground, n2 background) ([B/P2] QuantTest.errorIsAtMostHalfAStepAndGrowsWithN; DecodeCoreTest.blockTypeChoosesTheExponent; CodecHarnessTest.syntheticClipEndToEndIsDeterministicAndN0IsNearlyLossless; RESULTS.md P2.6 (video2 (2,5) fg 47.47 / bg 32.67 dB); docs/img/p2_SAL_n1_7_checker_crop1to1.png)
 - [x] C4 Blocks written in scan line order ([B/P2] CmpFormatTest.blocksAreInScanLineOrder385BytesEach; FrameEncoder block index b -> (b % blocksX, b / blocksX); real frames round trip in RESULTS.md P2.6)
