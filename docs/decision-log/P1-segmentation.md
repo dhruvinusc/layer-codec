@@ -296,3 +296,18 @@ Technical source: repo `docs/DECISIONS.md` (P1-D*) and Project doc 03 (D2, D3, D
 - Cost or limitation: with it off, video2's fence and trees stay foreground; with it on, a person moving against the camera's direction can be blurred.
 - Say it in the presentation: "Parallax is the one thing a flat camera model cannot explain. I built a filter for it, measured what it removes and what it wrongly removes, and kept the conservative default."
 - Likely professor question: Why not switch it on, since the numbers are better? / Answer: The numbers count foreground blocks, not mistakes. The filter's errors are blurred people, which are the errors a viewer notices, so I keep it off unless the evaluation clips make the trade clearly worth it.
+
+### P1-L21: Adding up slow motion over several frames (tried, not kept)
+- Date / window: Nov 14, Window A (W3, time box 1 day, used about 1.5 hours; P1-D25)
+- Brief says: every macroblock of every frame gets a label (B10); foreground is what moves differently from the background (B6, B7).
+- The problem in plain words: Stairs has 79 of 346 frames with no foreground, mostly while the walker is far away and moves about 2 px per frame against the camera. Those frames are all compressed with the background quantizer, so he blurs.
+- Options we considered:
+  1. Keep P1 as is : good, clean on the other clips / bad, the distant walker blurs.
+  2. Add up each block's leftover motion along its own motion track over the last few frames (decay 0.6), so 2 px per frame builds to about 5 px, and label blocks whose total is large in a separate pass : good, motion-only, built to target exactly this case / bad, also adds up steady noise on parallax areas.
+  3. Change the motion search so small flat objects keep their own vector : good, attacks the root cause / bad, changes every clip's vectors, outside the time box.
+- What we chose: option 1. Option 2 was built and measured on whole clips, then reverted; the patch is kept in `tools/experiments/` so the experiment can be re-run.
+- Why (plain words): in every variant video2's false foreground rose (6.95% to between 7.6% and 9.8%), Stairs gained at most 6 non-empty frames, and the target frame never recovered. The PM's rule was to keep it only if false foreground on video2 and SAL did not rise.
+- Proof: RESULTS "W3" (four variants, whole clips, plus the walker diagnosis); patch `tools/experiments/w3_accumulated_residual.patch`.
+- Cost or limitation: the distant Stairs walker stays background in the early frames. The diagnosis shows why: the search's smoothness penalty gives most of his flat, dark blocks the camera's vector, so there is no motion to add up.
+- Say it in the presentation: "I tried adding up slow motion over several frames. It found almost nothing new, because the walker's flat clothing never carries his motion in the first place, and it added false patches on video2, so I measured it, wrote it down and took it out."
+- Likely professor question: So how would you actually fix the distant walker? / Answer: Upstream, in the motion search: a smaller smoothness penalty for blocks whose own match clearly prefers a different vector, or smaller blocks for small objects. Both change every clip's vectors, so they need the whole tuning pass again.

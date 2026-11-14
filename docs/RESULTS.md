@@ -424,3 +424,16 @@ Parallax slide pair (same frames, filter off vs on at 30 degrees): `docs/img/p1_
 
 C1 check (scratch tool, reads each .cmp and the matching labels file): every 8x8 block_type equals the label of its 16x16 macroblock, 0 mismatches over 34.1 million blocks; frame counts match.
 Reading: the layer effect holds on real labels: foreground 13 to 14 dB above background on every clip (D5 evidence; the swapped (5,2) check comes with P3.R). The .cmp is 15 to 32 times the mp4 because baseline has no prediction between frames and no entropy coding beyond zlib (03 D7). E4: SAL encode 131 s in the sandbox; the Mac run plus decode decides E4.
+
+### W3 accumulated residual for slow movers [A/W3] (sandbox; whole clips; NOT kept)
+Idea: add up each block's residual along its own motion track, A_t = r_t + d * A_{t-1} (previous value read where the block came from), d = 0.6, so a steady 2 px/frame mover builds to about 5 px while noise grows only about 1.25 times. Separate slow-mover pass for blocks below resPx with |A| > accPx, same grouping rules, merged into the main labels. Patch: `tools/experiments/w3_accumulated_residual.patch`.
+
+| Variant | video2 mean fg (P1 final 6.95%) | Stairs empty frames (P1 final 79 of 346) | Stairs f69 | SAL mean fg (P1 final 1.07%) |
+|---|---|---|---|---|
+| accPx 4, exact camera test | 8.89% | 73 | 0.00% | not run |
+| accPx 5, exact camera test | 7.64% | not run | not run | 1.07% (unchanged) |
+| accPx 5, no camera test | 8.06% | 78 | 0.00% | not run |
+| accPx 4, no camera test | 9.76% | not run | not run | not run |
+
+Diagnosis (Stairs f69, walker rectangle 13 x 26 blocks): accumulation works where his vectors carry his motion (A = 6 to 8 px against about 1 px around him), but only 267 of 338 blocks are eligible, the camera test still explains most of the dark, flat ones (slack 2 grey levels per pixel), and the 32 remaining candidates are scattered, so no region reaches the size minimum. Root cause is upstream: on small, flat objects the motion search's smoothness penalty gives blocks their neighbours' (camera's) vector, so most of the walker never carries his motion.
+Decision: not kept (fails the rule "keep only if video2 and SAL false foreground do not rise"; no gain on the target frames). Code reverted; P1 labels unchanged. Decision log P1-L21.
