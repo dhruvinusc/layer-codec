@@ -30,7 +30,9 @@ import javax.imageio.ImageIO;
  * <p>{@code --naive} labels with the naive baseline (P1.5), {@code --seg} with the current segmenter, and {@code --sheet f.jpg} writes the frames
  * side by side at half size. {@code --cam-stats [--step k]} fits the camera model on every k-th frame
  * pair and writes {@code <out>/<clip>_cam.csv}. {@code --stats} runs the full segmenter over the whole
- * clip (temporal vote included) and writes {@code <out>/<clip>_seg.csv}. {@code --me-check} compares search methods (P1.3).
+ * clip (temporal vote included) and writes {@code <out>/<clip>_seg.csv}; with {@code --labels} also
+ * {@code <out>/<clip>.labels} and its SHA-256. {@code --parallax DEG} turns on the optional parallax
+ * filter (off by default, P1-L20) for comparison images. {@code --me-check} compares search methods (P1.3).
  *
  * <p>Drawing is done directly on the pixel array, so the tool needs nothing beyond ImageIO.
  */
@@ -50,8 +52,9 @@ public final class VizSeg {
             meCheck(o.clip, o.range);
             return;
         }
+        Segmenter.SegConfig cfg = config(o.parallax);
         if (o.stats) {
-            segStats(o.clip, o.out, o.sheet);
+            segStats(o.clip, o.out, o.sheet, o.labels, cfg);
             return;
         }
         if (o.camStats) {
@@ -85,7 +88,7 @@ public final class VizSeg {
                         GlobalMotion.Model cam = GlobalMotion.fit(me.field(), ok, p.width(), p.height(), GlobalMotion.GmConfig.DEFAULT);
                         labels = o.naive
                                 ? Segmenter.naive(y, p.width(), p.height(), me.field(), cam, Segmenter.SegConfig.DEFAULT)
-                                : Segmenter.fill(Segmenter.group(me.field(), Segmenter.foregroundEligible(y, prevY, p.width(), p.height(), me, cam, Segmenter.SegConfig.DEFAULT), cam, Segmenter.SegConfig.DEFAULT), Segmenter.SegConfig.DEFAULT);
+                                : Segmenter.fill(Segmenter.group(me.field(), Segmenter.foregroundEligible(y, prevY, p.width(), p.height(), me, cam, cfg), cam, cfg), cfg);
                         extra = String.format(", %s inliers %.2f, foreground %.1f%%", cam.kind(), cam.inlierRatio(), 100.0 * foreground(labels) / nb);
                     }
                     int[] rgb = render(p, labels, o.arrows ? me.field() : null);
@@ -249,7 +252,7 @@ public final class VizSeg {
      * {@code <out>/<clip>_seg.csv} (one row per frame), prints a summary, and with {@code --sheet}
      * saves the FINAL labels at 20/50/80% of the clip.
      */
-    static void segStats(Path clip, Path outDir, Path sheet) throws IOException {
+    static void segStats(Path clip, Path outDir, Path sheet, boolean saveLabels, Segmenter.SegConfig cfg) throws IOException {
         Files.createDirectories(outDir);
         String name = clip.getFileName().toString().replaceFirst("\\.[^.]+$", "");
         try (VideoIO.Reader reader = VideoIO.open(clip)) {
@@ -257,8 +260,10 @@ public final class VizSeg {
             int[] at = defaultFrames(info.frameCount());
             int[][] panels = new int[at.length][];
             Frame[] keep = new Frame[at.length];
-            Segmenter.Run run = new Segmenter.Run(info.paddedW(), info.paddedH(), Segmenter.SegConfig.DEFAULT,
+            Segmenter.Run run = new Segmenter.Run(info.paddedW(), info.paddedH(), cfg,
                     GlobalMotion.GmConfig.DEFAULT, MotionEstimator.HierParams.DEFAULT);
+            codec.encoder.LabelsIO.Writer lw = saveLabels
+                    ? new codec.encoder.LabelsIO.Writer(outDir.resolve(name + ".labels"), info.mbCols(), info.mbRows()) : null;
             Frame f = Frame.allocate(info.width(), info.height());
             int emitted = 0;
             long t0 = System.nanoTime();
@@ -270,10 +275,16 @@ public final class VizSeg {
                     keep[k] = p;
                 }
                 ready.addAll(run.push(ColorConv.luma(p)));
+                save(lw, ready);
                 emitted = drain(ready, emitted, at, keep, panels, info);
             }
             ready.addAll(run.finish());
+            save(lw, ready);
             emitted = drain(ready, emitted, at, keep, panels, info);
+            if (lw != null) {
+                System.out.printf("labels %s frames=%d sha256=%s%n", outDir.resolve(name + ".labels"), lw.frames(), lw.hash());
+                lw.close();
+            }
             double wall = (System.nanoTime() - t0) / 1e9;
             writeSegCsv(run.stats(), outDir.resolve(name + "_seg.csv"));
             printSegSummary(name, run.stats(), wall);
@@ -282,6 +293,25 @@ public final class VizSeg {
                 System.out.println("sheet " + sheet);
             }
         }
+    }
+
+    private static void save(codec.encoder.LabelsIO.Writer lw, java.util.List<Labels> ready) throws IOException {
+        if (lw != null) {
+            for (Labels l : ready) {
+                lw.write(l);
+            }
+        }
+    }
+
+    /** Default settings, with the optional parallax filter (P1-L20, off by default) when deg > 0. */
+    static Segmenter.SegConfig config(double parallaxDeg) {
+        Segmenter.SegConfig d = Segmenter.SegConfig.DEFAULT;
+        if (parallaxDeg <= 0) {
+            return d;
+        }
+        return new Segmenter.SegConfig(d.minTextureVar(), d.maxMatchMad(), d.candMinVar(), d.camSlackMad(), d.camSlackRel(),
+                d.camWindow(), d.resPx(), d.consPx(), d.consMinMag(), d.consAngleDeg(), d.minRegionBlocks(),
+                d.minRegionFrac(), d.maxSpreadPx(), d.dilate(), parallaxDeg, d.parallaxMinCam());
     }
 
     /** Renders kept frames whose final labels are now available; returns the new emitted count. */
@@ -498,11 +528,12 @@ public final class VizSeg {
     }
 
     private record Options(Path clip, int[] at, boolean arrows, int range, Path out, boolean meCheck,
-                           boolean naive, boolean seg, boolean stats, boolean camStats, int step, Path sheet) {
+                           boolean naive, boolean seg, boolean stats, boolean camStats, int step, Path sheet,
+                           boolean labels, double parallax) {
         static Options parse(String[] a) {
             if (a.length < 1) {
                 System.err.println("usage: VizSeg <clip> [--at f1,f2,..] [--arrows] [--range R] [--out dir] [--me-check]"
-                        + " [--naive | --seg | --stats [--sheet file.jpg]] [--cam-stats [--step k]]");
+                        + " [--naive | --seg | --stats [--labels] [--sheet file.jpg]] [--parallax DEG] [--cam-stats [--step k]]");
                 System.exit(2);
             }
             int[] at = null;
@@ -513,6 +544,8 @@ public final class VizSeg {
             boolean naive = false;
             boolean seg = false;
             boolean stats = false;
+            boolean labels = false;
+            double parallax = 0;
             boolean camStats = false;
             int step = 1;
             Path sheet = null;
@@ -526,6 +559,8 @@ public final class VizSeg {
                     case "--naive" -> naive = true;
                     case "--seg" -> seg = true;
                     case "--stats" -> stats = true;
+                    case "--labels" -> labels = true;
+                    case "--parallax" -> parallax = Double.parseDouble(a[++i]);
                     case "--cam-stats" -> camStats = true;
                     case "--step" -> step = Integer.parseInt(a[++i]);
                     case "--sheet" -> sheet = Path.of(a[++i]);
@@ -535,7 +570,7 @@ public final class VizSeg {
             if (step < 1) {
                 throw new IllegalArgumentException("--step must be >= 1");
             }
-            return new Options(Path.of(a[0]), at, arrows, range, out, meCheck, naive, seg, stats, camStats, step, sheet);
+            return new Options(Path.of(a[0]), at, arrows, range, out, meCheck, naive, seg, stats, camStats, step, sheet, labels, parallax);
         }
     }
 }
