@@ -470,3 +470,12 @@ Mac (RESULTS "W2 / D13 Mac numbers"): SAL, the largest clip (1080p, 437 frames),
 
 ### Stairs "ended early" (Window A's Mac check)
 Sandbox: the real data/Stairs.cmp has 346 frames in its header (same as the mp4) and all 346 decode without error (bench 65.6 fps, sandbox). "Not measured" in the report means the run was paused, stepped or quit before the last frame; the decoder itself is fine. The untouched Mac playback is in the P3.R quiet run (`out/p3r/quiet_run_p3r.sh`).
+
+### C1 label check method [A] (one-off check behind RESULTS "W2"; tool committed as tools/checks/C1Check.java)
+What it checks: for every frame of a real .cmp, each 8x8 block_type equals the foreground/background state of its 16x16 macroblock in the labels file written by the same pipeline. Inputs: `data/<clip>.cmp` from `EncoderMain` at (2,5) and `out/viz/final/<clip>.labels` from `VizSeg --stats --labels` with the same settings and the same machine (sandbox). Method: `CmpFormat.Reader.readFrame` gives the block types; `LabelsIO.Reader.read` gives the labels; block (x, y) is compared with macroblock (x / 2, y / 2); frame counts must match.
+Run (any machine, after `./gradlew -q jar`, with both files made on that machine):
+```
+mkdir -p out/c1 && javac -cp build/libs/layer-codec.jar -d out/c1 tools/checks/C1Check.java
+java -cp build/libs/layer-codec.jar:out/c1 diag.C1Check data/SAL.cmp out/viz/final/SAL.labels
+```
+Result (sandbox, Nov 14): video1 3,294,480 blocks, video2 2,435,880, Stairs 11,293,440, SAL 14,263,680; 0 mismatches in all (34.1 M blocks); foreground share 2.70%, 6.94%, 1.50%, 1.07%.

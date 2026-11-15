@@ -5,8 +5,8 @@ A box is ticked only with an evidence path beside it: a test name, a line in RES
 Due Wed Dec 2, 2026.
 
 ## A. Command line
-- [ ] A1 `myencoder input_video.mp4 n1 n2` produces `input_video.cmp` (partial: stub validates args and derives the path, `EncoderMainTest.validArgsAreParsedAndOutputIsDerived`)
-- [ ] A2 n1 = quantization exponent for FOREGROUND, n2 = for BACKGROUND (partial: CLI order and usage text, `EncoderMain.USAGE`)
+- [x] A1 `myencoder input_video.mp4 n1 n2` produces `input_video.cmp` [A/W1, W2]: EncoderMain runs segmentation, compression and the .cmp writer (95ae08d); EncoderEndToEndTest.encodesEveryFrameWithTheHeaderTheDecoderNeeds (synthetic clip, writes input_video.cmp next to the input); all 4 clips encoded (RESULTS "W2 real encodes"); Mac `./myencoder data/SAL.mp4 2 5` in 1:51 (RESULTS "W2 / D13 Mac numbers"); argument checks EncoderMainTest
+- [x] A2 n1 = quantization exponent for FOREGROUND, n2 = for BACKGROUND [A/W1]: EncoderMain passes n1, n2 into the header in that order; FrameEncoder quantizes block_type 1 with 2^n1 and 0 with 2^n2; DecodeCoreTest.blockTypeChoosesTheExponent; real-label swap (2,5) fg 47.78 / bg 33.99 dB vs (5,2) fg 34.41 / bg 48.05 dB (RESULTS "P3.R" D5 swap)
 - [x] A3 `mydecoder input_video.cmp` decodes and renders ([C/P3] DecoderMain.play; Mac playback RESULTS.md "P3.3 Player, Mac run 2" and "run 4"; DecodePipelineTest.everyFrameIdenticalToSerialDecode)
 - [x] A4 Decoder needs nothing except the .cmp (all metadata in the file) ([C/P3] header carries size, padded size, fps, frame count, n1, n2 (03 D7); all playback, bench and error runs use the .cmp alone, original mp4 optional for side by side only; CmpFormatTest.headerIs48BytesWithPatchedCountsAndZeroReserved, DecoderMainErrorsTest)
 
@@ -42,11 +42,11 @@ Due Wed Dec 2, 2026.
 - [x] E1 Own display code for input and output video ([C/P3] Display: own bilinear scaler (P0-D8), packed path, Display.View; DisplayScalerTest, DisplayViewTest; original read by OriginalVideo, OriginalVideoTest)
 - [x] E2 Play, PAUSE, STEP frame by frame ([C/P3] Mac keys check Nov 12 (WORKLOG [C/P3] "P3.3 DONE"); PlayerTest.pauseStepAndStepBackMoveOneFrameAndStopTheClock; step back: FrameCacheTest.stepBackFiftyFrom100CrossesTheCacheBoundaryCorrectly)
 - [x] E3 Output can be compared against the original ([C/P3] side by side + 1:1 zoom + overlay: docs/img/p3_SAL_n2_5_side_1to1.png, p3_SAL_n5_2_side_1to1.png, p3_video2_n2_5_overlay.png; Mac view check and 0 drops with the original at 30.0 fps: RESULTS.md "P3.4 / P3.4b Mac checks, Nov 13")
-- [x] E4 Encode + decode finish within 10 minutes ([C/P3.R] Mac: SAL (largest clip) encode 1:51 (RESULTS.md "W2 / D13 Mac numbers") + decode in real time 14.58 s (RESULTS.md "Quiet run (Nov 14)" P3.7) = about 2 min 6 s; RESULTS.md "P3.R E4")
+- [x] E4 Encode + decode finish within 10 minutes [C/P3.R, re-cited A]: Mac, SAL (largest clip), real files: encode `./myencoder data/SAL.mp4 2 5` 1:51 + decode/play `./mydecoder data/SAL.cmp` 14.57 s for the 14.57 s clip, 0 dropped (both RESULTS "W2 / D13 Mac numbers") = about 2 min 6 s; RESULTS "P3.R E4"
 
 ## F. Extra credit (only after A to E are green)
 - [ ] F1 Motion-compensated prediction: encode residual + one MV per macroblock
-- [ ] F2 Better coefficient scan order (zigzag) to help compression
+- [x] F2 Better coefficient scan order (zigzag) to help compression [C/P4-B, ticked A]: optional .cmp mode 1 (`--mode rle`, off by default), zigzag + run-length; 1.18x to 1.23x smaller, decode 76.2 vs 61.0 fps, pixel-identical (RESULTS "P4-B zigzag + run-length", "Quiet run"); RunLengthTest (zigzag order, lossless round trip), FrameDecodeTest.mode1DecodesToTheSamePixelsAsBaselineThroughThePipeline, CmpRecodeTest; baseline unchanged: GoldenBaselineTest (byte-identical payload and file)
 
 ## G. Brief is silent; decided in DECISIONS.md
 Language and libraries (D1), sizes not divisible by 16 (D5), where size/fps/frame count live (D7), text vs binary .cmp (D7), frame 0 label (D4), rotation metadata (D11), audio (D11), report and presentation format, demo logistics.
