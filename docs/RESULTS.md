@@ -452,3 +452,21 @@ Decision: not kept (fails the rule "keep only if video2 and SAL false foreground
 | `time VizSeg data/SAL.mp4 --stats --labels` | 90.7 s wall (ME 186, seg 12.8 ms/frame) | SAL motion + segmentation <= 3 min | yes |
 
 Cross-machine labels: Mac SAL labels SHA-256 `22a4eeb79ee922d2...`, sandbox `7f203b4c6ce044a7...`; 0.11% of blocks differ (3,871 of 3.57 M). Cause: the two FFmpeg builds decode different pixels. The first 3 decoded SAL frames as rgb24 hash to `e94e45f4187e485e` on the Mac (FFmpeg 7.1) and `19a8c69638e71fbe` in the sandbox (FFmpeg 4.4). Same machine, same input: identical labels (video2, two runs). The .cmp size also differs (424.7 vs 431.0 MB) for the same reason plus zlib builds. The Mac is the authority (00 section 2): reference SAL labels hash `22a4eeb7...`.
+
+## P3.R decoder on real myencoder files (Window C)
+
+### D5 swap with real labels (Nov 14, sandbox; PSNR does not depend on the machine)
+video2 encoded at (5,2) by `EncoderMain` (same program as ./myencoder) into out/p3r/ so the (2,5) file in data/ stays; PSNR from `Psnr <mp4> <cmp>`.
+
+| video2, real labels (6.9% foreground blocks) | Size | PSNR all / foreground / background (dB, mean) |
+|---|---|---|
+| (2,5), RESULTS W2 | 86.7 MB | 34.29 / **47.78** / 33.99 |
+| (5,2), new | 209.0 MB | 44.54 / 34.41 / **48.05** |
+
+The cleaner layer swaps with n1 and n2: foreground 13.8 dB above background at (2,5), 13.6 dB below at (5,2). The (5,2) file is 2.4x bigger because 93% of the blocks are background and now get the fine step. Images (decoder's own Display.View, frame 190): `docs/img/p3r_video2_n2_5_side_1to1.png`, `p3r_video2_n5_2_side_1to1.png` (1:1 side by side, panned to the foreground), `p3r_video2_n2_5_overlay.png` (plain | real-label overlay), `p3r_video2_swap_crop_x3.png` (original | (2,5) | (5,2), 128x128 crop at 3x, foreground blocks outlined). On video2 the visual difference is subtle because the source is soft; SAL's brick wall at (5,2) is encoded on the Mac in the P3.R quiet run for a clearer slide.
+
+### E4 encode + decode under 10 minutes
+Mac (RESULTS "W2 / D13 Mac numbers"): SAL, the largest clip (1080p, 437 frames), encodes in 1:51 wall and plays in real time (14.58 s for 14.57 s, quiet run P3.7), so encode + decode is about 2 minutes 6 s, under the 10-minute limit. The other clips are smaller (Stairs 346 frames at 1080p; video1, video2 at 480x848).
+
+### Stairs "ended early" (Window A's Mac check)
+Sandbox: the real data/Stairs.cmp has 346 frames in its header (same as the mp4) and all 346 decode without error (bench 65.6 fps, sandbox). "Not measured" in the report means the run was paused, stepped or quit before the last frame; the decoder itself is fine. The untouched Mac playback is in the P3.R quiet run (`out/p3r/quiet_run_p3r.sh`).

@@ -36,13 +36,13 @@ Due Wed Dec 2, 2026.
 - [x] D2 Dequantizes each block with n1 or n2 by block_type ([C/P3] DecodeCoreTest.blockTypeChoosesTheExponent, DecodeCoreTest.storedThreeRebuildsAs12InForegroundAnd96InBackground; RESULTS.md P2.9 fg/bg PSNR)
 - [x] D3 Inverse DCT, reconstruct, display ([C/P3] DctTest.zeroSkipInverseIsBitIdenticalToPlainInverse, DecodeCoreTest.nZeroRoundTripIsNearlyExactAndCropped, Player + Display on the Mac: RESULTS.md P3.3; docs/img/p3_SAL_n2_5_side_1to1.png)
 - [x] D4 Plays at the ORIGINAL frame rate ([C/P3] RESULTS.md "P3.3 Player, Mac run 2" (all clips within 0.6%, video2 12.77 s vs 12.77 s) and "run 4" (0 drops, within 0.13%); PlayerTest.fastDecodePlaysEveryFrameOnTimeAndPausesOnTheLast, slowDecodeDropsFramesButKeepsTheOriginalRate)
-- [ ] D5 Foreground visibly cleaner than background when n1 < n2; effect reverses when swapped (partial [C/P3]: fake checkerboard labels; docs/img/p3_SAL_n2_5_side_1to1.png vs p3_SAL_n5_2_side_1to1.png (decoder 1:1 side by side), RESULTS.md P2.9 fg 47.7 vs bg 34.5 dB at (2,5), reversed at (5,2); final check with real labels after wire-up, P3.R)
+- [x] D5 Foreground visibly cleaner than background when n1 < n2; effect reverses when swapped ([C/P3.R] real labels, video2: (2,5) fg 47.78 / bg 33.99 dB, (5,2) fg 34.41 / bg 48.05 dB, RESULTS.md "P3.R D5 swap"; all 4 clips at (2,5) fg 13 to 14 dB above bg, RESULTS.md W2; images docs/img/p3r_video2_n2_5_side_1to1.png, p3r_video2_n5_2_side_1to1.png, p3r_video2_swap_crop_x3.png; decoder 1:1 side-by-side view)
 
 ## E. Player and run time
 - [x] E1 Own display code for input and output video ([C/P3] Display: own bilinear scaler (P0-D8), packed path, Display.View; DisplayScalerTest, DisplayViewTest; original read by OriginalVideo, OriginalVideoTest)
 - [x] E2 Play, PAUSE, STEP frame by frame ([C/P3] Mac keys check Nov 12 (WORKLOG [C/P3] "P3.3 DONE"); PlayerTest.pauseStepAndStepBackMoveOneFrameAndStopTheClock; step back: FrameCacheTest.stepBackFiftyFrom100CrossesTheCacheBoundaryCorrectly)
 - [x] E3 Output can be compared against the original ([C/P3] side by side + 1:1 zoom + overlay: docs/img/p3_SAL_n2_5_side_1to1.png, p3_SAL_n5_2_side_1to1.png, p3_video2_n2_5_overlay.png; Mac view check and 0 drops with the original at 30.0 fps: RESULTS.md "P3.4 / P3.4b Mac checks, Nov 13")
-- [ ] E4 Encode + decode finish within 10 minutes (partial [C/P3]: decode faster than real time, pipeline 40.7 to 60.7 fps at 1080p, RESULTS.md P3.1; encode side and real files after wire-up, P3.R)
+- [x] E4 Encode + decode finish within 10 minutes ([C/P3.R] Mac: SAL (largest clip) encode 1:51 (RESULTS.md "W2 / D13 Mac numbers") + decode in real time 14.58 s (RESULTS.md "Quiet run (Nov 14)" P3.7) = about 2 min 6 s; RESULTS.md "P3.R E4")
 
 ## F. Extra credit (only after A to E are green)
 - [ ] F1 Motion-compensated prediction: encode residual + one MV per macroblock
