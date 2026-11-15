@@ -149,15 +149,15 @@ class McCodecTest {
         short[] far = new short[12];
         far[0] = 200;
         Types.MotionField bad = new Types.MotionField(4, 3, far, new short[12]);
-        assertTrue(assertThrows(CmpException.class, () -> McCodec.encode(h, st, frame(2), t, bad, 2))
+        assertTrue(assertThrows(CmpException.class, () -> McCodec.encode(h, st, frame(3), t, bad, 3)) // 3 is a P frame at GOP 2
                 .getMessage().contains("outside -128..127"));
         assertTrue(assertThrows(CmpException.class, () -> McCodec.decode(h, fresh, new byte[0], 0, t, coef))
                 .getMessage().contains("empty"));
     }
 
     @Test
-    void groupLengthIsEight() {
-        assertEquals(8, McCodec.GOP);
-        assertTrue(McCodec.isIntra(0) && McCodec.isIntra(8) && !McCodec.isIntra(7));
+    void groupLengthIsTwo() {
+        assertEquals(2, McCodec.GOP); // P4-L3
+        assertTrue(McCodec.isIntra(0) && McCodec.isIntra(2) && McCodec.isIntra(8) && !McCodec.isIntra(7) && !McCodec.isIntra(1));
     }
 }

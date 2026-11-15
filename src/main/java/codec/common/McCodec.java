@@ -18,9 +18,9 @@ import java.io.ByteArrayOutputStream;
  * routine on the same numbers, so their reference frames are bit-identical (tested).
  *
  * <p>Groups: frame k is an I frame (coded from scratch) when k is a multiple of {@link #GOP},
- * otherwise a P frame (predicted from frame k-1). A group of 8 can be decoded on its own, which is
- * what lets the player decode several groups at once (GopPipeline) and limits a step back to at
- * most 7 extra decodes.
+ * otherwise a P frame (predicted from frame k-1). A group (I frame plus its P frames) can be
+ * decoded on its own, which is what lets the player decode several groups at once (GopPipeline) and limits a step back to at
+ * most GOP - 1 extra decodes.
  *
  * <p>Payload of one frame: 1 byte frame type (0 = I, 1 = P); P frames then 2 signed bytes (dx, dy)
  * per macroblock in scan line order (vector convention 03 D12: block at (x, y) in frame t is
@@ -30,8 +30,8 @@ import java.io.ByteArrayOutputStream;
  */
 public final class McCodec {
 
-    /** I frame every 8 frames (P4-L1 default: memory and parallel decoding). */
-    public static final int GOP = 8;
+    /** I frame every 2 frames (P4-L3, PM Nov 15: GOP sweep, baseline quality at 35 to 52% smaller). */
+    public static final int GOP = 2;
     static final int FRAME_I = 0;
     static final int FRAME_P = 1;
     private static final int MID = 128;

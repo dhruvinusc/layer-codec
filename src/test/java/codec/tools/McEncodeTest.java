@@ -25,7 +25,7 @@ class McEncodeTest {
     private Path clip() throws Exception {
         assumeTrue(ffmpegAvailable(), "ffmpeg not on PATH");
         Path clip = dir.resolve("t.mp4");
-        // 72x40 (not a multiple of 16) with a moving test pattern, 20 frames = 2.5 groups.
+        // 72x40 (not a multiple of 16) with a moving test pattern, 20 frames = 10 groups of 2.
         Process p = new ProcessBuilder(ffmpeg(), "-v", "error", "-f", "lavfi", "-i", "testsrc=size=72x40:rate=30",
                 "-frames:v", "20", "-c:v", "mpeg4", "-q:v", "2", "-pix_fmt", "yuv420p", clip.toString())
                 .redirectErrorStream(true).start();

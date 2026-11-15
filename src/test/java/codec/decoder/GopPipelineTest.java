@@ -28,7 +28,7 @@ class GopPipelineTest {
 
     static final Header H = new Header(CmpFormat.FLAG_ZLIB | (CmpFormat.MODE_MC << CmpFormat.MODE_SHIFT),
             60, 40, 64, 48, 30, 1, 0, 2, 5, 0);
-    static final int FRAMES = 35; // 4 full groups + 3 frames
+    static final int FRAMES = 35; // 17 full groups + 1 frame (GOP 2)
 
     static Types.Frame frame(int t) {
         Types.Frame f = Types.Frame.allocate(64, 48);
@@ -172,6 +172,6 @@ class GopPipelineTest {
         Header hd = new Header(H.flags(), 1920, 1080, 1920, 1088, 30, 1, 0, 2, 5, 0);
         int cap = GopPipeline.defaultCapacity(hd, 4);
         assertTrue(cap >= McCodec.GOP && cap <= 4 * McCodec.GOP, "1080p capacity " + cap);
-        assertThrows(IllegalArgumentException.class, () -> new GopPipeline(H, 5, 1, 4, k -> null));
+        assertThrows(IllegalArgumentException.class, () -> new GopPipeline(H, 5, 1, McCodec.GOP - 1, k -> null));
     }
 }
