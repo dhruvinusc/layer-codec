@@ -16,8 +16,13 @@ import codec.encoder.Segmenter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayDeque;
 import java.util.List;
+import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
 
 /**
  * P4-A encoder: {@code McEncode input.mp4 n1 n2 [output.cmp] [--frames N]} writes a mode-2 .cmp
@@ -73,7 +78,7 @@ public final class McEncode {
     }
 
     /** A padded frame waiting for its labels, with its motion field against the previous frame. */
-    private record Pending(Frame padded, MotionField mv) {
+    private record Pending(Frame padded, Future<MotionField> mv) {
     }
 
     static String encode(Args a) throws IOException {
@@ -88,31 +93,51 @@ public final class McEncode {
             McCodec.State st = new McCodec.State(info.paddedW(), info.paddedH());
             Psnr psnr = new Psnr();
             Stats stats = new Stats();
-            ArrayDeque<Pending> waiting = new ArrayDeque<>();
-            int[] prevY = null;
-            MotionField prevField = null;
+            // Three stages, each on one thread, so their order (and the output bytes) never changes:
+            // main reads frames and runs the segmenter; "me" searches the vectors for P frames
+            // (its own chain of predictors); "enc" codes frames in order once their labels are out.
+            ConcurrentLinkedDeque<Pending> waiting = new ConcurrentLinkedDeque<>();
+            ExecutorService me = Executors.newSingleThreadExecutor();
+            ExecutorService enc = Executors.newSingleThreadExecutor();
+            Semaphore backlog = new Semaphore(6); // frames handed to enc but not yet coded
+            MotionField[] prevField = {null};
+            Future<?> last = null;
             try (CmpFormat.Writer out = new CmpFormat.Writer(a.output(), h)) {
                 Frame f = Frame.allocate(info.width(), info.height());
+                int[] prevY = null;
                 int read = 0;
                 while (read < a.maxFrames() && in.read(f)) {
                     read++;
                     Frame p = Pad.toMacroblocks(f);
                     int[] y = ColorConv.luma(p);
-                    MotionField mv = null;
-                    if (prevY != null) {
-                        mv = MotionEstimator.hierarchical(y, prevY, info.paddedW(), info.paddedH(),
-                                MotionEstimator.HierParams.DEFAULT, prevField, 0, 0).field();
-                        prevField = mv;
+                    Future<MotionField> mv;
+                    // Only P frames use vectors; skipping the search on I frames halves it at GOP 2.
+                    if (prevY != null && !McCodec.isIntra(read - 1)) {
+                        int[] cur = y;
+                        int[] ref = prevY;
+                        mv = me.submit(() -> {
+                            MotionField m = MotionEstimator.hierarchical(cur, ref, info.paddedW(), info.paddedH(),
+                                    MotionEstimator.HierParams.DEFAULT, prevField[0], 0, 0).field();
+                            prevField[0] = m;
+                            return m;
+                        });
+                    } else {
+                        mv = java.util.concurrent.CompletableFuture.completedFuture(null);
                     }
                     prevY = y;
                     waiting.add(new Pending(p, mv));
-                    write(out, h, st, waiting, seg.push(y), psnr, stats);
+                    last = newest(last, submit(enc, backlog, out, h, st, waiting, seg.push(y), psnr, stats));
                 }
-                write(out, h, st, waiting, seg.finish(), psnr, stats);
+                last = newest(last, submit(enc, backlog, out, h, st, waiting, seg.finish(), psnr, stats));
+                await(last, stats);
                 if (!waiting.isEmpty()) { // 1-frame clip: no motion, all background (as myencoder)
-                    write(out, h, st, waiting, List.of(new Labels(info.mbCols(), info.mbRows(),
+                    last = submit(enc, backlog, out, h, st, waiting, List.of(new Labels(info.mbCols(), info.mbRows(),
                             new byte[info.mbCols() * info.mbRows()])), psnr, stats);
+                    await(last, stats);
                 }
+            } finally {
+                me.shutdownNow();
+                enc.shutdownNow();
             }
             double wall = (System.nanoTime() - t0) / 1e9;
             return String.format("mc encode: %s -> %s  frames %d  n1 %d  n2 %d  size %.1f MB  "
@@ -123,21 +148,92 @@ public final class McEncode {
         }
     }
 
+    /** Hands ready labels to the coding thread; every task runs in submission order. */
+    private static Future<?> submit(ExecutorService enc, Semaphore backlog, CmpFormat.Writer out, Header h,
+                                    McCodec.State st, ConcurrentLinkedDeque<Pending> waiting, List<Labels> ready,
+                                    Psnr psnr, Stats stats) throws IOException {
+        if (ready.isEmpty()) {
+            return null;
+        }
+        try {
+            backlog.acquire(ready.size());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("interrupted", e);
+        }
+        return enc.submit(() -> {
+            try {
+                if (stats.error == null) { // after a failure, later frames are not coded
+                    write(out, h, st, waiting, ready, psnr, stats);
+                }
+            } catch (Exception e) {
+                stats.error = e;
+            } finally {
+                backlog.release(ready.size());
+            }
+            return null;
+        });
+    }
+
+    private static Future<?> newest(Future<?> last, Future<?> next) {
+        return next == null ? last : next;
+    }
+
+    /**
+     * Waits for the last coding task; tasks run in order, so all earlier ones are done too. Then
+     * rethrows the first failure of any task.
+     */
+    private static void await(Future<?> last, Stats stats) throws IOException {
+        if (last != null) {
+            get(last);
+        }
+        Throwable c = stats.error;
+        if (c instanceof IOException io) {
+            throw io;
+        }
+        if (c instanceof RuntimeException r) {
+            throw r;
+        }
+        if (c != null) {
+            throw new IOException(c);
+        }
+    }
+
+    private static void get(Future<?> last) throws IOException {
+        try {
+            last.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("interrupted", e);
+        } catch (ExecutionException e) {
+            Throwable c = e.getCause();
+            if (c instanceof IOException io) {
+                throw io;
+            }
+            if (c instanceof RuntimeException r) {
+                throw r;
+            }
+            throw new IOException(c);
+        }
+    }
+
     private static final class Stats {
         int frames;
         int iCount;
         int pCount;
         long iBytes;
         long pBytes;
+        Exception error; // written and read only on the coding thread, then read after get()
     }
 
-    private static void write(CmpFormat.Writer out, Header h, McCodec.State st, ArrayDeque<Pending> waiting,
-                              List<Labels> ready, Psnr psnr, Stats stats) throws IOException {
+    private static void write(CmpFormat.Writer out, Header h, McCodec.State st, ConcurrentLinkedDeque<Pending> waiting,
+                              List<Labels> ready, Psnr psnr, Stats stats) throws IOException, InterruptedException,
+            ExecutionException {
         for (Labels lab : ready) {
             Pending p = waiting.poll();
             int k = stats.frames++;
             byte[] types = CmpFormat.blockTypes(lab, h.blocksX(), h.blocksY());
-            byte[] payload = McCodec.encode(h, st, p.padded(), types, p.mv(), k);
+            byte[] payload = McCodec.encode(h, st, p.padded(), types, p.mv().get(), k);
             out.writePayload(payload);
             if (McCodec.isIntra(k)) {
                 stats.iCount++;
