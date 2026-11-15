@@ -22,6 +22,9 @@ final class FrameDecode {
         if (h.mode() == CmpFormat.MODE_BASELINE) {
             return DecodeCore.decode(h, payload, s);
         }
+        if (h.mode() == CmpFormat.MODE_MC) {
+            throw new CmpException("mode 2 frames depend on earlier frames: decode them with GopPipeline");
+        }
         if (h.mode() != CmpFormat.MODE_RLE) {
             throw new CmpException("unknown mode " + h.mode());
         }

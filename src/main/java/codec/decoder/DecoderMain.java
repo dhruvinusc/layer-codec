@@ -2,6 +2,7 @@ package codec.decoder;
 
 import codec.common.CmpFormat;
 import codec.common.Display;
+import codec.common.McCodec;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
@@ -98,7 +99,7 @@ public final class DecoderMain {
         try (CmpFormat.Reader r = new CmpFormat.Reader(a.cmp())) {
             CmpFormat.Header h = r.header();
             int workers = a.workers() > 0 ? a.workers() : DecodePipeline.defaultWorkers();
-            int cap = DecodePipeline.defaultCapacity(h, workers);
+            int cap = capacityFor(h, workers);
             String name = a.cmp().getFileName().toString();
             System.out.printf("file     : %s  %dx%d  n1=%d n2=%d  mode=%d  frames=%d  fps=%d/%d%n", name, h.width(),
                     h.height(), h.n1(), h.n2(), h.mode(), r.frameCount(), h.fpsNum(), h.fpsDen());
@@ -112,7 +113,7 @@ public final class DecoderMain {
             }
             System.out.println("keys     : space play/pause, right step, left step back, q quit, "
                     + "s side by side, z 1:1 zoom (drag to pan), d foreground overlay");
-            try (DecodePipeline p = new DecodePipeline(r, workers, cap); OriginalVideo o = original) {
+            try (FramePipeline p = open(r, workers, cap); OriginalVideo o = original) {
                 FrameCache cache = new FrameCache(p);
                 // With an original, the window is two frames wide so side by side fits; single
                 // view is then centered in it.
@@ -133,6 +134,19 @@ public final class DecoderMain {
                 }
             }
         }
+    }
+
+    /** Mode 2 (motion-compensated groups) needs GopPipeline; modes 0 and 1 decode frames independently. */
+    static FramePipeline open(CmpFormat.Reader r, int workers, int cap) {
+        return r.header().mode() == CmpFormat.MODE_MC
+                ? new GopPipeline(r, workers, cap)
+                : new DecodePipeline(r, workers, cap);
+    }
+
+    static int capacityFor(CmpFormat.Header h, int workers) {
+        return h.mode() == CmpFormat.MODE_MC
+                ? GopPipeline.defaultCapacity(h, workers)
+                : DecodePipeline.defaultCapacity(h, workers);
     }
 
     /** Adapts the step-back cache to the player's source interface (get + pre-roll readiness). */
@@ -250,6 +264,14 @@ public final class DecoderMain {
     }
 
     private static void serialPass(CmpFormat.Reader r, DecodeCore.Scratch s, int m) throws IOException {
+        if (r.header().mode() == CmpFormat.MODE_MC) {
+            McCodec.State st = new McCodec.State(r.header().paddedW(), r.header().paddedH());
+            for (int k = 0; k < m; k++) { // in order: each P frame needs the one before
+                McCodec.decode(r.header(), st, r.payload(k), k, s.types, s.coef);
+                st.frame(r.header().width(), r.header().height());
+            }
+            return;
+        }
         for (int k = 0; k < m; k++) {
             FrameDecode.decode(r.header(), r.payload(k), s);
         }
@@ -257,8 +279,8 @@ public final class DecoderMain {
 
     private static void pipelinePass(CmpFormat.Reader r, int w, int n, double budget)
             throws IOException, InterruptedException {
-        int cap = DecodePipeline.defaultCapacity(r.header(), w);
-        try (DecodePipeline p = new DecodePipeline(r, w, cap)) {
+        int cap = capacityFor(r.header(), w);
+        try (FramePipeline p = open(r, w, cap)) {
             long t0 = System.nanoTime();
             for (int k = 0; k < n; k++) {
                 p.get(k);

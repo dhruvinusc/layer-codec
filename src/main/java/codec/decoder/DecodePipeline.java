@@ -27,7 +27,7 @@ import java.util.Map;
  * <p>Seeking: asking for a frame outside the window (a step back, or a jump ahead) starts a new
  * window there. Work from the old window is discarded by a generation counter.
  */
-public final class DecodePipeline implements AutoCloseable {
+public final class DecodePipeline implements FramePipeline {
 
     /** Decodes frame k with the caller's scratch. Production reads the .cmp; tests may add delays. */
     @FunctionalInterface

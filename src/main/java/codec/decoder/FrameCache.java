@@ -45,7 +45,7 @@ public final class FrameCache {
         }
     }
 
-    private final DecodePipeline pipeline;
+    private final FramePipeline pipeline;
     private final int capacity;
     private final Entry[] slots;
     private final Map<Integer, Integer> slotOf = new HashMap<>();
@@ -53,11 +53,11 @@ public final class FrameCache {
     private long hits;
     private long misses;
 
-    public FrameCache(DecodePipeline pipeline) {
+    FrameCache(FramePipeline pipeline) {
         this(pipeline, DEFAULT_CAPACITY);
     }
 
-    public FrameCache(DecodePipeline pipeline, int capacity) {
+    FrameCache(FramePipeline pipeline, int capacity) {
         if (capacity < 1) {
             throw new IllegalArgumentException("capacity must be >= 1, got " + capacity);
         }
