@@ -496,3 +496,28 @@ On battery (charger not connected); no thermal or performance warning recorded (
 - **D5 on SAL, real labels, Mac:** (2,5) fg 47.53 / bg 34.34 dB (RESULTS W2) vs (5,2) fg **34.40** / bg **47.72** dB (this run; all 46.87): foreground 13.2 dB above background, then 13.3 dB below. (5,2) file 1142.8 MB vs 431.0 MB, because 99% of SAL's blocks are background and get the fine step. Images: `docs/img/p3r_SAL_swap_crop_x3.png` (frame 200, original | (2,5) | (5,2), 160x160 at 3x: face sharp and bricks soft at (2,5), bricks sharp and jacket blockier at (5,2)), `p3r_SAL_orig_1to1.png`, `p3r_SAL_n2_5_1to1.png`, `p3r_SAL_n5_2_1to1.png` (480x270 at 1:1 from (820, 270)).
 - **E4, Mac:** SAL (5,2) encode 130 s wall (segmentation 200 ms/frame, compression 85 ms/frame), the worst case (largest file); decode plays in real time (14.58 s for 14.57 s). Encode + decode about 2 min 25 s, under 10 minutes. (2,5): 1:51 encode (W2) + 14.6 s.
 - **Side by side key `s`:** Dhruvin reports it does not split on the Mac. Fixed in P3-D16 (see that entry); Mac recheck queued.
+
+## P4-A motion-compensated residuals (mode 2), first measurements (Nov 15, sandbox; sizes and PSNR do not depend on the machine) [C/P4]
+Tool: `McEncode <mp4> n1 n2 [out] [--frames N]` (4b377b4), same labels and block types as ./myencoder; PSNR mean over frames, all / fg / bg dB.
+
+Whole clips at (2,5), GOP 8 (as approved):
+
+| Clip | Baseline (W2) | Mode 2, GOP 8 | Size change | PSNR change (all / fg / bg) |
+|---|---|---|---|---|
+| video1, 518 fr | 65.9 MB, 37.73 / 47.98 / 37.62 | 32.0 MB, 36.44 / 47.20 / 36.33 | -51% | -1.3 / -0.8 / -1.3 |
+| video2, 383 fr | 86.7 MB, 34.29 / 47.78 / 33.99 | 58.5 MB, 33.12 / 47.06 / 32.82 | -33% | -1.2 / -0.7 / -1.2 |
+
+Quality falls inside each group (video2, first 96 frames, PSNR by position, 0 = I frame): 34.34, 33.89, 33.40, 33.11, 32.79, 32.62, 32.43, 32.36. The I frame equals baseline (34.34 vs 34.28). Cause: with step 2^n, any residual change smaller than half a step is rounded to zero, so small changes are never sent and the error grows until the next I frame (it stays bounded; the encoder predicts from the reconstructed frame, so encoder and decoder never disagree).
+
+Group length sweep, first 96 frames at (2,5) (experiment: GOP constant changed in a scratch copy, nothing committed):
+
+| GOP | video2 size | video2 PSNR all / fg / bg | video1 size | video1 PSNR all / fg / bg |
+|---|---|---|---|---|
+| baseline | 20.2 MB | 34.28 | 10.8 MB | 38.23 |
+| 2 | 13.2 MB (-35%) | **34.24** / 47.46 / 33.97 | 5.2 MB (-52%) | **37.96** / 47.67 / 37.88 |
+| 3 | 13.0 MB (-36%) | 33.99 / 47.33 / 33.72 | 5.0 MB (-54%) | 37.74 / 47.50 / 37.66 |
+| 4 | 13.4 MB (-34%) | 33.75 / 47.23 / 33.48 | 5.0 MB (-54%) | 37.48 / 47.39 / 37.40 |
+| 6 | 13.7 MB (-32%) | 33.39 / 47.11 / 33.11 | | |
+| 8 (approved) | 14.2 MB (-30%) | 33.12 / 47.04 / 32.84 | 5.1 MB (-53%) | 36.81 / 47.15 / 36.73 |
+
+Reading: longer groups are not smaller here; the growing error makes late P frames cost more. GOP 2 keeps baseline quality (-0.04 dB on video2, -0.27 dB on video1) at 35 to 52% smaller. Also tried (not recommended): P frames one step finer (n-1): video2 24.0 MB, 37.04 dB, i.e. bigger than baseline and changes what n1, n2 mean. DECISION REQUEST P4-A GOP in WORKLOG.

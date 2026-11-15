@@ -226,3 +226,10 @@ One command does all of them: `bash out/p3/quiet_run.sh` (git-ignored script, ab
 - [C] MAC CHECKS (one list, run when convenient, quiet Mac, charger in):
   1. `s` recheck (1 min): `./gradlew -q jar && ./mydecoder data/SAL.cmp data/SAL.mp4`, press space to pause, press s: expect the original on the right and "view : s -> side by side ON" in the terminal; click the picture, press s again: expect it to go back; q. Then `./mydecoder data/video2.cmp`, press s: expect "no original was given" in the terminal.
   2. P4-A bench and playback of mode-2 files (commands come with the end-of-P4-A report).
+- [C/P4] 2026-11-15 P4-A measured: whole-clip GOP 8 video1 -51% size / -1.3 dB, video2 -33% / -1.2 dB vs baseline at (2,5); GOP sweep shows GOP 2 keeps baseline quality at -35 to -52% (RESULTS "P4-A", P4-L3). `s` fix: keys arrive on the Mac (terminal shows view lines); visual split confirmation pending from Dhruvin.
+
+### DECISION REQUEST [C/P4, Nov 15]: P4-A group length
+- What: McCodec.GOP 8 (approved) or 2.
+- Why: at GOP 8 predicted frames lose quality along the group (34.3 -> 32.4 dB on video2); GOP 8 files are 33 to 51% smaller but 1.2 to 1.3 dB worse than baseline. GOP 2 is 35 to 52% smaller at baseline quality (-0.04 dB video2, -0.27 dB video1, first 96 frames).
+- Options: (A) GOP 2 (recommended: honest "smaller at the same quality"); (B) keep GOP 8 and report it as smaller but slightly worse; (C) GOP 3 (smallest, -0.3 to -0.5 dB).
+- Impact: one constant, plus tests; decoder unchanged otherwise; whole-clip numbers for all 4 clips re-run after the choice. Nothing else waits on it.

@@ -73,3 +73,19 @@ Owner: proposed by Window C (Nov 14). Status: P4-L1 was a DECISION REQUEST (Nov 
 - Cost or limitation: The gain on these test files is modest (1.18x to 1.23x), at the low end of the 1.2x to 1.5x estimate, because zlib already removed much of the zero padding. The test files mark half the blocks foreground (fake checkerboard), which keeps many nonzero coefficients; real labels (5 to 12% foreground) should do better, to be measured after wire-up. Decode speed on the Mac not measured yet (quiet Mac).
 - Say it in the presentation: "Our extra credit scans each block from low to high frequency and stores only the nonzero values with the count of zeros before them; on our test files that made the files about 20% smaller with identical pictures."
 - Likely professor question: Why so little gain if most coefficients are zero? / Answer: zlib was already compressing those runs of zero bytes in the baseline. Run-length still helps because zigzag puts the zeros together, and the gain grows when fewer blocks are foreground, as with real segmentation.
+
+### P4-L3: How long a group (I frame every how many frames) - PENDING PM
+- Date / window: Nov 15, Window C
+- Brief says: Extra credit for better compression; n1 and n2 are the quantization exponents for foreground and background.
+- The problem in plain words: The approved design starts a fresh (I) frame every 8 frames. Measured on real clips, each predicted frame is a little worse than the one before, because changes smaller than half a quantization step are rounded away and never sent. At GOP 8 the file is 33 to 51% smaller but about 1.2 dB worse on average than baseline at the same n1, n2.
+- Options we considered:
+  1. Keep GOP 8 : good as approved / bad 1.2 to 1.3 dB worse than baseline, and the file is not even the smallest
+  2. GOP 2 (every other frame predicted) : good same quality as baseline (within 0.3 dB) and 35 to 52% smaller; decoder groups are tiny, so parallel decode and stepping back are easy / bad half the frames are still I frames
+  3. GOP 3 or 4 : good smallest files / bad 0.3 to 0.8 dB worse than baseline
+  4. Finer step on predicted frames (n-1) : good much better quality / bad bigger than baseline and changes what n1, n2 mean
+- What we chose: Recommend option 2; waiting for PM.
+- Why (plain words): A fair comparison holds quality fixed. GOP 2 is the only setting that gives the same picture quality as baseline while still cutting the file by a third to a half, so the claim "smaller at the same quality" is honest.
+- Proof: RESULTS "P4-A" sweep, first 96 frames of video1 and video2, GOP 2, 3, 4, 6, 8.
+- Cost or limitation: One constant (McCodec.GOP) used by both encoder and decoder; old mode-2 files would not decode after a change (none are kept or shipped).
+- Say it in the presentation: "Predicting every other frame from the one before cuts the file by a third to a half with no visible quality loss."
+- Likely professor question: Why not predict longer runs? / Answer: We measured it. With 2^n quantization, small changes are rounded away, so the error grows along the run and later frames cost more to fix. Short groups were both smaller and cleaner.
