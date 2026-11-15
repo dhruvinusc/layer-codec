@@ -82,8 +82,13 @@ public final class RunLength {
 
     /** Parses a mode-1 payload into {@code types} and {@code coef} (baseline layout); validates it. */
     public static void decode(Header h, byte[] in, byte[] types, short[] coef) throws CmpException {
+        decode(h, in, 0, types, coef);
+    }
+
+    /** Same, for run-length blocks starting at {@code start} (mode 2 puts a frame header first). */
+    public static void decode(Header h, byte[] in, int start, byte[] types, short[] coef) throws CmpException {
         int blocks = h.blockCount();
-        int p = 0;
+        int p = start;
         try {
             for (int b = 0; b < blocks; b++) {
                 int type = in[p++] & 0xFF;

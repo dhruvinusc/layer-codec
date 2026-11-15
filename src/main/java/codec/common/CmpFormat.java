@@ -44,6 +44,12 @@ public final class CmpFormat {
     public static final int MODE_BASELINE = 0;
     /** P4 option B (PM approved Nov 14): baseline blocks, coefficients in zigzag + run-length. */
     public static final int MODE_RLE = 1;
+    /**
+     * P4 option A (PM approved Nov 14): motion-compensated residuals predicted from the
+     * reconstructed previous frame, an I frame every {@link McCodec#GOP} frames, coefficients in
+     * zigzag + run-length. Frames depend on earlier frames of their group (see McCodec).
+     */
+    public static final int MODE_MC = 2;
     /** Coefficients per block: 64 for each of R, G, B. */
     public static final int COEF_PER_BLOCK = 3 * 64;
     /** Bytes per baseline block: 1 type byte + 192 shorts. */
@@ -102,9 +108,9 @@ public final class CmpFormat {
             if ((flags & ~KNOWN_FLAG_BITS) != 0) {
                 throw new CmpException(String.format("unknown flag bits 0x%04x", flags & ~KNOWN_FLAG_BITS));
             }
-            if (mode() != MODE_BASELINE && mode() != MODE_RLE) {
+            if (mode() != MODE_BASELINE && mode() != MODE_RLE && mode() != MODE_MC) {
                 throw new CmpException("unknown mode " + mode()
-                        + " (this build knows 0 = baseline, 1 = zigzag + run-length)");
+                        + " (this build knows 0 = baseline, 1 = zigzag + run-length, 2 = motion-compensated)");
             }
             checkN("n1", n1);
             checkN("n2", n2);
