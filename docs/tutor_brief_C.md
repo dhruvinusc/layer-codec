@@ -81,3 +81,10 @@ explain-backs in the build window on purpose; they are owed here (06 items D7 an
 17. P4-A: what is drift, and why must the encoder contain a decoder?
 18. P2 (owed, D7): DC of a flat block of 200; why round not truncate; why zlib is allowed; why the
     .cmp is bigger than the mp4; why swapping n1 and n2 swaps the PSNR.
+
+## Nov 15 update (P3.R closed, P4-A done, code freeze)
+- Side-by-side key fix (P3-L16): Java delivers keys to whatever part of the window has focus; our listener sat on the outer frame. Keys are now bound to the whole window, and each view key prints what it did. Good quiz question: why did s work sometimes and not others?
+- Swap check on SAL (D5): (2,5) face sharp, bricks soft; (5,2) bricks sharp, jacket blocky. Slide: docs/img/p3r_SAL_swap_crop_x3.png.
+- Motion compensation (P4-L3, the key decision): predicting every frame for 8 frames lost about 2 dB by the end of the group, because 2^n quantization rounds small changes to zero and they are never sent. Groups of 2 kept baseline quality and were still the smallest. Learn the GOP sweep table; it is the reason.
+- Final numbers (RESULTS "P4 final"): mode 2 is 36 to 51% smaller than baseline within 0.23 dB; mode 1 is lossless and 29 to 41% smaller.
+- Threads without randomness (P4-L4): three stages, each in frame order, so the output bytes never change.

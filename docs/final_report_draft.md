@@ -138,14 +138,29 @@ Sizes from the sandbox encodes; the Mac SAL file is 424.7 MB because of a differ
 
 ## 8. Extra credit
 
-### 8.1 Zigzag and run-length coefficients (done, .cmp mode 1)
-- **What it does:** `./myencoder input.mp4 n1 n2 --mode rle` writes the same quantized coefficients in zigzag order with run-length coding. The baseline remains the default, and its bytes are pinned by a golden test. [P4-L2]
-- **Size:** with test labels, files are 1.18x (video2) to 1.23x (SAL) smaller. [RESULTS "P4-B zigzag + run-length"]
-- **Speed:** decoding is faster, 76.2 vs 61.0 fps for a 4-worker pipeline on SAL, with pixel-identical pictures. [RESULTS "Quiet run"]
-- **(pending)** sizes with real labels.
+Both options are off by default; the baseline bytes are pinned by a golden test, so the graded format never changed. [P4-L2, P4-L3]
 
-### 8.2 Motion-compensated residual coding (placeholder)
-**(pending)** Approved, to be built after P3.R; it ships only if solid by Nov 24. This section will describe residual coding with one motion vector per macroblock, prediction from the reconstructed previous frame, the I-frame interval, and size and PSNR per layer against the baseline.
+### 8.1 Zigzag and run-length coefficients (.cmp mode 1)
+- **What it does:** `./myencoder input.mp4 n1 n2 --mode rle` writes the same quantized coefficients in zigzag order (low frequencies first), then codes each run of zeros as one pair, ending each block at its last nonzero value. [P4-L2]
+- **Effect:** identical pictures, 29 to 41% smaller files, and faster decoding, because most coefficients at 2^5 are zero and are no longer stored one by one.
+
+### 8.2 Motion-compensated residual coding (.cmp mode 2)
+- **What it does:** every second frame is predicted from the previous decoded frame, moved by one motion vector per 16x16 macroblock. Only the difference (the residual) is transformed and quantized, with 2^n1 for foreground blocks and 2^n2 for background blocks as before, then stored with the mode 1 run-length coding. The other frames are coded on their own (I frames). [P4-L1, P4-L3]
+- **Why every second frame:** with 2^n quantization, changes smaller than half a step are rounded away, so quality slips a little on each predicted frame until the next I frame. Measured over group lengths 2 to 8, groups of 2 kept baseline quality and were still among the smallest; longer groups were both bigger and worse. [RESULTS "P4-A"]
+- **Decoder:** each pair of frames decodes on its own, so the player decodes several pairs at once; plain `./mydecoder` plays mode 2 files, including on 1080p in real time. [P3-L2, P4-D2]
+- **Make a mode 2 file:** `java -cp build/libs/layer-codec.jar codec.tools.McEncode data/SAL.mp4 2 5` writes `data/SAL_mc.cmp` and prints its PSNR per layer.
+
+### 8.3 Results, all four clips at (2,5)
+PSNR is the mean over frames: all / foreground / background. Decode speed is a 4-worker bench in the sandbox; the Mac is faster.
+
+| Clip (frames) | Baseline (mode 0) | Zigzag + RLE (mode 1) | Motion-compensated, GOP 2 (mode 2) |
+|---|---|---|---|
+| video1 (518) | 65.9 MB, 37.73 / 47.98 / 37.62 dB, 357 fps | 39.2 MB (-41%), same pixels, 529 fps | **32.9 MB (-50%)**, 37.50 / 47.75 / 37.39 dB, 447 fps |
+| video2 (383) | 86.7 MB, 34.29 / 47.78 / 33.99 dB, 339 fps | 61.6 MB (-29%), same pixels, 381 fps | **55.1 MB (-36%)**, 34.07 / 47.55 / 33.76 dB, 310 fps |
+| Stairs (346, 1080p) | 294.6 MB, 35.30 / 48.12 / 35.24 dB, 67.6 fps | 195.9 MB (-34%), same pixels, 88.1 fps | **152.6 MB (-48%)**, 35.11 / 47.83 / 35.04 dB, 72.9 fps |
+| SAL (437, 1080p) | 431.0 MB, 34.38 / 47.53 / 34.34 dB, 62.2 fps | 272.7 MB (-37%), same pixels, 72.2 fps | **210.4 MB (-51%)**, 34.24 / 47.32 / 34.20 dB, 65.4 fps |
+
+Mode 2 halves the file on three of the four clips with quality within 0.23 dB of the baseline on every clip and layer. Mode 1 is lossless and gives a third or more. All three modes decode faster than real time. [RESULTS "P4 final"]
 
 ## 9. How to build and run
 
@@ -153,7 +168,7 @@ Requirements: Java 21 and FFmpeg (with ffprobe) on the PATH. On the project Mac,
 
 ```
 cd layer-codec
-./gradlew build                         # compiles and runs all tests (219 at the time of writing)
+./gradlew build                         # compiles and runs all tests (234 at the time of writing)
 ./myencoder data/SAL.mp4 2 5            # writes data/SAL.cmp
 ./mydecoder data/SAL.cmp                # plays at the source frame rate
 ./mydecoder data/SAL.cmp data/SAL.mp4   # same, with the original available for side by side
@@ -161,7 +176,7 @@ cd layer-codec
 
 Player keys: space play/pause, right arrow step forward, left arrow step back, `s` side by side, `z` 1:1 zoom (drag to pan), `d` foreground overlay, `q` quit.
 
-Optional, off by default: `./myencoder input.mp4 n1 n2 --mode rle` (extra credit mode 1). Windows users run `myencoder.bat` and `mydecoder.bat` with the same arguments.
+Optional, off by default: `./myencoder input.mp4 n1 n2 --mode rle` (extra credit mode 1) and `java -cp build/libs/layer-codec.jar codec.tools.McEncode input.mp4 n1 n2` (extra credit mode 2, writes `<name>_mc.cmp`); `./mydecoder` plays all three modes. Windows users run `myencoder.bat` and `mydecoder.bat` with the same arguments.
 
 Inspection tools (not needed to grade):
 - `java -cp build/libs/layer-codec.jar codec.tools.VizSeg <clip> --stats --labels --sheet out.jpg` draws the segmentation overlays and writes the labels file.

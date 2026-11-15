@@ -521,3 +521,15 @@ Group length sweep, first 96 frames at (2,5) (experiment: GOP constant changed i
 | 8 (approved) | 14.2 MB (-30%) | 33.12 / 47.04 / 32.84 | 5.1 MB (-53%) | 36.81 / 47.15 / 36.73 |
 
 Reading: longer groups are not smaller here; the growing error makes late P frames cost more. GOP 2 keeps baseline quality (-0.04 dB on video2, -0.27 dB on video1) at 35 to 52% smaller. Also tried (not recommended): P frames one step finer (n-1): video2 24.0 MB, 37.04 dB, i.e. bigger than baseline and changes what n1, n2 mean. DECISION REQUEST P4-A GOP in WORKLOG.
+
+## P4 final: baseline vs mode 1 vs mode 2, all 4 clips at (2,5) (Nov 15, sandbox) [C/P4]
+Same machine, same labels for all three modes (sandbox FFmpeg; the Mac decodes slightly different pixels, so Mac-made labels differ by 0.11% of blocks, RESULTS W2). Baseline: `EncoderMain` (= ./myencoder) into out/p4/<clip>_base.cmp (sizes and PSNR equal RESULTS W2); mode 1: `CmpRecode` of that file (same coefficients, lossless, so PSNR is identical); mode 2: `McEncode` (GOP 2, P4-L3). PSNR mean over frames, all / foreground / background. Decode fps: `mydecoder --bench --workers 4`, sandbox (4 cores, nice'd); Mac numbers are higher (P3.R quiet run: SAL baseline 81 fps on the Mac vs 62 here).
+
+| Clip (frames) | Baseline (mode 0) | Zigzag + RLE (mode 1) | Motion-compensated, GOP 2 (mode 2) |
+|---|---|---|---|
+| video1 (518) | 65.9 MB, 37.73 / 47.98 / 37.62 dB, 357 fps | 39.2 MB (-41%), same pixels, 529 fps | **32.9 MB (-50%)**, 37.50 / 47.75 / 37.39 dB, 447 fps |
+| video2 (383) | 86.7 MB, 34.29 / 47.78 / 33.99 dB, 339 fps | 61.6 MB (-29%), same pixels, 381 fps | **55.1 MB (-36%)**, 34.07 / 47.55 / 33.76 dB, 310 fps |
+| Stairs (346, 1080p) | 294.6 MB, 35.30 / 48.12 / 35.24 dB, 67.6 fps | 195.9 MB (-34%), same pixels, 88.1 fps | **152.6 MB (-48%)**, 35.11 / 47.83 / 35.04 dB, 72.9 fps |
+| SAL (437, 1080p) | 431.0 MB, 34.38 / 47.53 / 34.34 dB, 62.2 fps | 272.7 MB (-37%), same pixels, 72.2 fps | **210.4 MB (-51%)**, 34.24 / 47.32 / 34.20 dB, 65.4 fps |
+
+Reading: mode 2 halves the file on three of four clips at baseline quality (within 0.23 dB on every clip and layer); mode 1 gives a third to two fifths with identical pixels; all three decode faster than real time even in the sandbox. Mode 2 encode wall (sandbox, 3-thread McEncode): video1 22 s, video2 18 s, Stairs 79 s, SAL 100 s (baseline encoder: 28, 24, 102, 134 s). P frames are 0.45 to 0.64 of an I frame. Playback of mode 2 with plain `./mydecoder` (GopPipeline, Xvfb virtual screen, 2 workers): video2 383/383, 0 dropped, +0.03%; SAL_mc 1080p 437/437, 0 dropped, 11 late (2.5%), +0.02%. Mac quiet playback in the final check.

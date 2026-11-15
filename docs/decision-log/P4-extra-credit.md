@@ -74,7 +74,7 @@ Owner: proposed by Window C (Nov 14). Status: P4-L1 was a DECISION REQUEST (Nov 
 - Say it in the presentation: "Our extra credit scans each block from low to high frequency and stores only the nonzero values with the count of zeros before them; on our test files that made the files about 20% smaller with identical pictures."
 - Likely professor question: Why so little gain if most coefficients are zero? / Answer: zlib was already compressing those runs of zero bytes in the baseline. Run-length still helps because zigzag puts the zeros together, and the gain grows when fewer blocks are foreground, as with real segmentation.
 
-### P4-L3: How long a group (I frame every how many frames) - PENDING PM
+### P4-L3: How long a group (I frame every how many frames) - DECIDED (PM, Nov 15: GOP 2)
 - Date / window: Nov 15, Window C
 - Brief says: Extra credit for better compression; n1 and n2 are the quantization exponents for foreground and background.
 - The problem in plain words: The approved design starts a fresh (I) frame every 8 frames. Measured on real clips, each predicted frame is a little worse than the one before, because changes smaller than half a quantization step are rounded away and never sent. At GOP 8 the file is 33 to 51% smaller but about 1.2 dB worse on average than baseline at the same n1, n2.
@@ -83,9 +83,34 @@ Owner: proposed by Window C (Nov 14). Status: P4-L1 was a DECISION REQUEST (Nov 
   2. GOP 2 (every other frame predicted) : good same quality as baseline (within 0.3 dB) and 35 to 52% smaller; decoder groups are tiny, so parallel decode and stepping back are easy / bad half the frames are still I frames
   3. GOP 3 or 4 : good smallest files / bad 0.3 to 0.8 dB worse than baseline
   4. Finer step on predicted frames (n-1) : good much better quality / bad bigger than baseline and changes what n1, n2 mean
-- What we chose: Recommend option 2; waiting for PM.
+- What we chose: Option 2, GOP 2 (PM decision Nov 15). Whole clips afterwards: 36 to 51% smaller than baseline, within 0.23 dB on every clip and layer (RESULTS "P4 final").
 - Why (plain words): A fair comparison holds quality fixed. GOP 2 is the only setting that gives the same picture quality as baseline while still cutting the file by a third to a half, so the claim "smaller at the same quality" is honest.
 - Proof: RESULTS "P4-A" sweep, first 96 frames of video1 and video2, GOP 2, 3, 4, 6, 8.
 - Cost or limitation: One constant (McCodec.GOP) used by both encoder and decoder; old mode-2 files would not decode after a change (none are kept or shipped).
 - Say it in the presentation: "Predicting every other frame from the one before cuts the file by a third to a half with no visible quality loss."
 - Likely professor question: Why not predict longer runs? / Answer: We measured it. With 2^n quantization, small changes are rounded away, so the error grows along the run and later frames cost more to fix. Short groups were both smaller and cleaner.
+
+GOP sweep behind the choice (first 96 frames at (2,5), RESULTS "P4-A"):
+
+| GOP | video2 size | video2 PSNR all | video1 size | video1 PSNR all |
+|---|---|---|---|---|
+| baseline | 20.2 MB | 34.28 | 10.8 MB | 38.23 |
+| 2 (chosen) | 13.2 MB | 34.24 | 5.2 MB | 37.96 |
+| 3 | 13.0 MB | 33.99 | 5.0 MB | 37.74 |
+| 4 | 13.4 MB | 33.75 | 5.0 MB | 37.48 |
+| 8 | 14.2 MB | 33.12 | 5.1 MB | 36.81 |
+
+### P4-L4: Encoding mode 2 on three threads
+- Date / window: Nov 15, Window C
+- Brief says: Encode plus decode within 10 minutes (E4).
+- The problem in plain words: The mode-2 encoder did everything on one thread: the segmenter, a second motion search for the prediction, and the coding. SAL took about 3.5 minutes in the sandbox, too long for comfortable testing and close to the encoder's E4 share.
+- Options we considered:
+  1. Leave it : good no risk / bad slow
+  2. Reuse the segmenter's motion field instead of searching twice : good least work / bad needs a hook in Window A's Segmenter (parcel), not possible before freeze
+  3. Three fixed stages on three threads (segmenter, motion search, coding), each stage in frame order, plus no search on I frames : good 2x faster with byte-identical output / bad a little more code
+- What we chose: Option 3.
+- Why (plain words): Each stage keeps its own order, so the file is exactly the same as the single-thread version; only the waiting overlaps.
+- Proof: video2 file byte-identical to the single-thread run (cmp); McEncodeTest (two runs give the same SHA-256); 234/234. SAL 100 s, Stairs 79 s (sandbox).
+- Cost or limitation: Up to 6 frames waiting for the coding thread (about 150 MB at 1080p).
+- Say it in the presentation: "The motion-compensated encoder runs its three stages side by side and still writes exactly the same file."
+- Likely professor question: Doesn't threading make the output random? / Answer: No. Each stage is one thread working through frames in order; threads only hand finished frames to the next stage.

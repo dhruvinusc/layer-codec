@@ -45,7 +45,7 @@ Due Wed Dec 2, 2026.
 - [x] E4 Encode + decode finish within 10 minutes [C/P3.R, re-cited A]: Mac, SAL (largest clip), real files: encode `./myencoder data/SAL.mp4 2 5` 1:51 + decode/play `./mydecoder data/SAL.cmp` 14.57 s for the 14.57 s clip, 0 dropped (both RESULTS "W2 / D13 Mac numbers") = about 2 min 6 s; RESULTS "P3.R E4"
 
 ## F. Extra credit (only after A to E are green)
-- [ ] F1 Motion-compensated prediction: encode residual + one MV per macroblock
+- [x] F1 Motion-compensated prediction: encode residual + one MV per macroblock [C/P4-A]: optional .cmp mode 2 via `java -cp build/libs/layer-codec.jar codec.tools.McEncode <mp4> n1 n2`, one vector per macroblock, residual from the reconstructed previous frame, I frame every 2 (P4-L3); all 4 clips at (2,5) 36 to 51% smaller than baseline within 0.23 dB per layer (RESULTS "P4 final"); plays with plain ./mydecoder (GopPipeline), 0 dropped on 1080p (sandbox virtual screen; Mac in final check); McCodecTest (6), GopPipelineTest (6), McEncodeTest (2); baseline unchanged: GoldenBaselineTest
 - [x] F2 Better coefficient scan order (zigzag) to help compression [C/P4-B, ticked A]: optional .cmp mode 1 (`--mode rle`, off by default), zigzag + run-length; 1.18x to 1.23x smaller, decode 76.2 vs 61.0 fps, pixel-identical (RESULTS "P4-B zigzag + run-length", "Quiet run"); RunLengthTest (zigzag order, lossless round trip), FrameDecodeTest.mode1DecodesToTheSamePixelsAsBaselineThroughThePipeline, CmpRecodeTest; baseline unchanged: GoldenBaselineTest (byte-identical payload and file)
 
 ## G. Brief is silent; decided in DECISIONS.md
