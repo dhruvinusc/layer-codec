@@ -9,7 +9,8 @@ import java.awt.Graphics;
 import java.awt.GraphicsEnvironment;
 import java.awt.Rectangle;
 import java.awt.Toolkit;
-import java.awt.event.KeyAdapter;
+import java.awt.event.ActionEvent;
+import java.awt.event.InputEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.KeyEvent;
@@ -24,7 +25,12 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
+import javax.swing.AbstractAction;
+import javax.swing.ActionMap;
+import javax.swing.InputMap;
+import javax.swing.JComponent;
 import javax.swing.JFrame;
+import javax.swing.KeyStroke;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import javax.swing.WindowConstants;
@@ -92,32 +98,23 @@ public final class Display implements AutoCloseable {
         };
         canvas.addMouseListener(drag);
         canvas.addMouseMotionListener(drag);
-        window.addKeyListener(new KeyAdapter() {
-            @Override
-            public void keyPressed(KeyEvent e) {
-                Key k = switch (e.getKeyCode()) {
-                    case KeyEvent.VK_SPACE -> Key.TOGGLE_PLAY;
-                    case KeyEvent.VK_RIGHT -> Key.STEP_FORWARD;
-                    case KeyEvent.VK_LEFT -> Key.STEP_BACK;
-                    case KeyEvent.VK_Q, KeyEvent.VK_ESCAPE -> Key.QUIT;
-                    default -> null;
-                };
-                if (k != null) {
-                    keys.add(k);
-                    return;
-                }
-                // View keys change only how the current picture is drawn, so the display handles
-                // them itself, right here on the event thread (P3.4, P3.5): s side by side,
-                // z 1:1 zoom, d foreground overlay.
-                switch (e.getKeyCode()) {
-                    case KeyEvent.VK_S -> canvas.toggle(View.Toggle.SIDE_BY_SIDE);
-                    case KeyEvent.VK_Z -> canvas.toggle(View.Toggle.ZOOM);
-                    case KeyEvent.VK_D -> canvas.toggle(View.Toggle.OVERLAY);
-                    default -> {
-                    }
-                }
-            }
-        });
+        // Keys are bound on the root pane for the whole window (P3-L16), not as a KeyListener on
+        // the frame: a frame listener only hears keys while the frame itself owns the focus, so
+        // on the Mac a click or a focus hand-off could leave some keys dead. Shift and Caps Lock
+        // variants are bound too.
+        canvas.setFocusable(false);
+        JComponent root = window.getRootPane();
+        InputMap in = root.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
+        ActionMap act = root.getActionMap();
+        bind(in, act, "play", () -> keys.add(Key.TOGGLE_PLAY), KeyEvent.VK_SPACE);
+        bind(in, act, "right", () -> keys.add(Key.STEP_FORWARD), KeyEvent.VK_RIGHT);
+        bind(in, act, "left", () -> keys.add(Key.STEP_BACK), KeyEvent.VK_LEFT);
+        bind(in, act, "quit", () -> keys.add(Key.QUIT), KeyEvent.VK_Q, KeyEvent.VK_ESCAPE);
+        // View keys change only how the current picture is drawn, so the display handles them
+        // itself, right here on the event thread (P3.4, P3.5): s side by side, z 1:1, d overlay.
+        bind(in, act, "side", () -> viewKey('s', View.Toggle.SIDE_BY_SIDE), KeyEvent.VK_S);
+        bind(in, act, "zoom", () -> viewKey('z', View.Toggle.ZOOM), KeyEvent.VK_Z);
+        bind(in, act, "overlay", () -> viewKey('d', View.Toggle.OVERLAY), KeyEvent.VK_D);
         window.addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
@@ -154,6 +151,27 @@ public final class Display implements AutoCloseable {
      */
     public void show(int[] rgb, int w, int h) {
         showLayers(rgb, null, 0, null, w, h);
+    }
+
+    private static void bind(InputMap in, ActionMap act, String name, Runnable r, int... codes) {
+        for (int c : codes) {
+            in.put(KeyStroke.getKeyStroke(c, 0), name);
+            in.put(KeyStroke.getKeyStroke(c, InputEvent.SHIFT_DOWN_MASK), name);
+        }
+        act.put(name, new AbstractAction() {
+            private static final long serialVersionUID = 1L;
+
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                r.run();
+            }
+        });
+    }
+
+    /** Event thread: toggles a view and says so in the terminal, so a key press is never silent. */
+    private void viewKey(char key, View.Toggle t) {
+        String line = canvas.toggle(t);
+        System.out.println("view     : " + key + " -> " + line);
     }
 
     /**
@@ -387,11 +405,22 @@ public final class Display implements AutoCloseable {
             }
         }
 
+        /** One line for the terminal after a view key, e.g. "side by side ON". */
+        String describe(Toggle t, boolean hasRight) {
+            return switch (t) {
+                case SIDE_BY_SIDE -> !sideBySide ? "side by side OFF"
+                        : hasRight ? "side by side ON"
+                        : "side by side ON, but no original was given: run mydecoder file.cmp file.mp4";
+                case ZOOM -> zoom ? "1:1 zoom ON (drag to pan)" : "1:1 zoom OFF";
+                case OVERLAY -> overlay ? "foreground overlay ON" : "foreground overlay OFF";
+            };
+        }
+
         /** Short tags for the status line, e.g. " | side by side | 1:1". */
         String tags(boolean hasRight) {
             StringBuilder b = new StringBuilder();
-            if (sideBySide && hasRight) {
-                b.append(" | side by side");
+            if (sideBySide) {
+                b.append(hasRight ? " | side by side" : " | side by side needs the original .mp4");
             }
             if (zoom) {
                 b.append(" | 1:1 (drag to pan)");
@@ -523,14 +552,17 @@ public final class Display implements AutoCloseable {
         }
 
         /** Event thread: flips a view setting and redraws the current picture at once. */
-        void toggle(View.Toggle t) {
+        String toggle(View.Toggle t) {
+            String line;
             synchronized (lock) {
                 view.toggle(t);
                 if (left != null) {
                     renderLocked();
                 }
+                line = view.describe(t, left == null || right != null);
             }
             repaint();
+            return line;
         }
 
         /** Event thread: moves the 1:1 view by screen pixels (= source pixels when zoomed). */

@@ -479,3 +479,20 @@ mkdir -p out/c1 && javac -cp build/libs/layer-codec.jar -d out/c1 tools/checks/C
 java -cp build/libs/layer-codec.jar:out/c1 diag.C1Check data/SAL.cmp out/viz/final/SAL.labels
 ```
 Result (sandbox, Nov 14): video1 3,294,480 blocks, video2 2,435,880, Stairs 11,293,440, SAL 14,263,680; 0 mismatches in all (34.1 M blocks); foreground share 2.70%, 6.94%, 1.50%, 1.07%.
+
+### P3.R quiet-Mac run (Nov 15, Mac, `out/p3r/quiet_run_p3r.sh`, log out/p3r/quiet_run_p3r.txt) [C/P3.R]
+On battery (charger not connected); no thermal or performance warning recorded (`pmset -g therm`). Real ./myencoder files, all at (2,5), 4 workers.
+
+| Clip | Serial ms/frame (1 core) | Pipeline fps (4 workers) | x real time | Untouched playback: dropped / late | Duration error |
+|---|---|---|---|---|---|
+| video1 480x848, 518 fr | 7.2 | 463.3 | 15.4x | 0 / 1 (0.2%) | +0.03% |
+| video2 480x848, 383 fr | 8.8 | 407.6 | 13.6x | 1 (0.3%) / 2 (0.5%) | +0.11% |
+| Stairs 1080p, 346 fr | 40.4 | 82.9 | 2.8x | **0 / 5 (1.4%)** | +0.09% |
+| SAL 1080p, 437 fr | 42.4 | 81.0 | 2.7x | 0 / 7 in first 100 | not measured (quit before the end) |
+| SAL + original side by side | | | | 1 (0.2%) / 9 (2.1%) | +0.08% |
+
+- Stairs "ended early" is closed: untouched, it played all 346 frames, 0 dropped, within 0.09% of the clip length. The earlier early endings were runs quit or stepped before the last frame (the report says "not measured" then); the file and decoder were fine (sandbox: all 346 decode).
+- SAL in step 2 was quit before its last frame (the first 100 frames were clean); the full-length SAL run with the original (step 3) and the Nov 14 quiet run (0 dropped, +0.09%) cover it.
+- **D5 on SAL, real labels, Mac:** (2,5) fg 47.53 / bg 34.34 dB (RESULTS W2) vs (5,2) fg **34.40** / bg **47.72** dB (this run; all 46.87): foreground 13.2 dB above background, then 13.3 dB below. (5,2) file 1142.8 MB vs 431.0 MB, because 99% of SAL's blocks are background and get the fine step. Images: `docs/img/p3r_SAL_swap_crop_x3.png` (frame 200, original | (2,5) | (5,2), 160x160 at 3x: face sharp and bricks soft at (2,5), bricks sharp and jacket blockier at (5,2)), `p3r_SAL_orig_1to1.png`, `p3r_SAL_n2_5_1to1.png`, `p3r_SAL_n5_2_1to1.png` (480x270 at 1:1 from (820, 270)).
+- **E4, Mac:** SAL (5,2) encode 130 s wall (segmentation 200 ms/frame, compression 85 ms/frame), the worst case (largest file); decode plays in real time (14.58 s for 14.57 s). Encode + decode about 2 min 25 s, under 10 minutes. (2,5): 1:51 encode (W2) + 14.6 s.
+- **Side by side key `s`:** Dhruvin reports it does not split on the Mac. Fixed in P3-D16 (see that entry); Mac recheck queued.

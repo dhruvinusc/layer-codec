@@ -58,7 +58,8 @@ class DisplayViewTest {
         int[] out = new int[6 * 2];
         v.render(ramp(2, 2, 1), null, 2, 2, out, 6, 2);
         assertArrayEquals(new int[] {0, 0, 1, 2, 0, 0, 0, 0, 3, 4, 0, 0}, out);
-        assertEquals("", v.tags(false), "no side-by-side tag without an original");
+        assertEquals(" | side by side needs the original .mp4", v.tags(false),
+                "asking for side by side without an original says why nothing split");
     }
 
     @Test
@@ -150,5 +151,18 @@ class DisplayViewTest {
         assertEquals(" | side by side | 1:1 (drag to pan) | foreground in red", v.tags(true));
         v.toggle(Display.View.Toggle.ZOOM);
         assertEquals(" | side by side | foreground in red", v.tags(true));
+    }
+
+    @Test
+    void everyViewKeySaysWhatItDid() {
+        Display.View v = new Display.View();
+        v.toggle(Display.View.Toggle.SIDE_BY_SIDE);
+        assertEquals("side by side ON", v.describe(Display.View.Toggle.SIDE_BY_SIDE, true));
+        assertTrue(v.describe(Display.View.Toggle.SIDE_BY_SIDE, false).contains("no original"));
+        v.toggle(Display.View.Toggle.SIDE_BY_SIDE);
+        assertEquals("side by side OFF", v.describe(Display.View.Toggle.SIDE_BY_SIDE, false));
+        v.toggle(Display.View.Toggle.ZOOM);
+        assertEquals("1:1 zoom ON (drag to pan)", v.describe(Display.View.Toggle.ZOOM, true));
+        assertEquals("foreground overlay OFF", v.describe(Display.View.Toggle.OVERLAY, true));
     }
 }

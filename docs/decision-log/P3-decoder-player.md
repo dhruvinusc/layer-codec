@@ -223,3 +223,18 @@ Owner: Window C. Oldest first. Matching technical entries: repo docs/DECISIONS.m
 - Cost or limitation: Up to 39 original frames in memory (about 320 MB at 1080p). Stepping back more than 30 frames still rereads the mp4 from the start.
 - Say it in the presentation: "The original video is read ahead on its own thread, just like our decoder, so the side-by-side comparison plays at full speed."
 - Likely professor question: Why not seek in the mp4 instead of rereading? / Answer: We read frames through an FFmpeg pipe, which only goes forward. Seeking would need restarting FFmpeg at a time stamp, and compressed video can only start cleanly at keyframes, so we kept the simple, always-correct reread for the rare long step back.
+
+### P3-L16: Player keys bound to the whole window, and every view key answers
+- Date / window: Nov 15, Window C
+- Brief says: Optional side-by-side comparison with the original (E3); the player is ours (D1 to D4).
+- The problem in plain words: Dhruvin reported more than once that pressing s on the Mac never split the picture. The keys were listened for on the window frame itself. Java only delivers keys there while the frame owns the keyboard focus, so a click on the picture or a focus hand-off can leave keys dead. Also, s did nothing at all, silently, when no original mp4 was given (four of the five plays in a normal test run), which looks exactly like a broken key.
+- Options we considered:
+  1. Keep the frame listener and ask the user to click the title bar first : good no code / bad fragile in a live demo
+  2. Bind the keys to the whole window (Swing key bindings, "when in focused window") and make the picture unfocusable : good works whatever part of the window has focus / bad small rewrite of the key code
+  3. Option 2 plus a terminal line and a status-bar note for every view key : good a press is never silent, and "no original given" is spelled out / bad one extra line of output per press
+- What we chose: Option 3.
+- Why (plain words): In a demo, a key that seems to do nothing is the worst outcome. Now the window always hears the key, and the terminal prints "view : s -> side by side ON" or "side by side ON, but no original was given: run mydecoder file.cmp file.mp4".
+- Proof: On a real (virtual X) screen, a robot clicked the picture and pressed s: the right half filled with the original (6000 blue test pixels), s again removed it, q quit. DisplayViewTest everyViewKeySaysWhatItDid; full suite 234/234 (sandbox). The old code could not be checked the same way in the sandbox, so the Mac recheck decides.
+- Cost or limitation: Shift variants are bound too; other modifier combinations (Cmd+S) are not, on purpose.
+- Say it in the presentation: "Press s and the original appears on the right. If you forgot to give the original, the player says so instead of doing nothing."
+- Likely professor question: Why did a key work some times and not others? / Answer: Java sends a key to whichever part of the window has focus. Our listener sat on the outer frame, so after focus moved it heard nothing. Binding the keys to the whole window removes that dependency.
