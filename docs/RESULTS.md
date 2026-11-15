@@ -533,3 +533,18 @@ Same machine, same labels for all three modes (sandbox FFmpeg; the Mac decodes s
 | SAL (437, 1080p) | 431.0 MB, 34.38 / 47.53 / 34.34 dB, 62.2 fps | 272.7 MB (-37%), same pixels, 72.2 fps | **210.4 MB (-51%)**, 34.24 / 47.32 / 34.20 dB, 65.4 fps |
 
 Reading: mode 2 halves the file on three of four clips at baseline quality (within 0.23 dB on every clip and layer); mode 1 gives a third to two fifths with identical pixels; all three decode faster than real time even in the sandbox. Mode 2 encode wall (sandbox, 3-thread McEncode): video1 22 s, video2 18 s, Stairs 79 s, SAL 100 s (baseline encoder: 28, 24, 102, 134 s). P frames are 0.45 to 0.64 of an I frame. Playback of mode 2 with plain `./mydecoder` (GopPipeline, Xvfb virtual screen, 2 workers): video2 383/383, 0 dropped, +0.03%; SAL_mc 1080p 437/437, 0 dropped, 11 late (2.5%), +0.02%. Mac quiet playback in the final check.
+
+## Final Mac check (Nov 15, commit 88fc181, `bash tools/final_check.sh`, log out/final/final_check.txt) [C]
+On battery, no thermal or performance warning. `./gradlew build`: 234 tests, all passed (golden baseline included). Labels made on the Mac (FFmpeg 7.1), so sizes differ slightly from the sandbox table; every mode uses the same Mac labels.
+
+| Clip | Baseline: size, PSNR all/fg/bg, encode, decode fps | Mode 1 (`--mode rle`) | Mode 2 (McEncode, GOP 2) |
+|---|---|---|---|
+| video1 | 65.0 MB, 37.72 / 48.01 / 37.62, 25 s, 323 fps | 38.7 MB (-40%), 25 s, 548 fps | 32.4 MB (-50%), 37.49 / 47.77 / 37.39, 21 s, 448 fps |
+| video2 | 85.4 MB, 34.30 / 47.79 / 33.98, 19 s, 395 fps | 60.9 MB (-29%), 19 s, 495 fps | 54.5 MB (-36%), 34.08 / 47.56 / 33.75, 16 s, 408 fps |
+| Stairs | 291.0 MB, 35.30 / 48.13 / 35.24, 85 s, 81.5 fps | 193.9 MB (-33%), 86 s, 105.1 fps | 151.1 MB (-48%), 35.11 / 47.84 / 35.04, 75 s, 87.9 fps |
+| SAL | 424.7 MB, 34.38 / 47.52 / 34.34, 115 s, 77.2 fps | 269.0 MB (-37%), 113 s, 95.0 fps | 207.3 MB (-51%), 34.24 / 47.31 / 34.20, 112 s, 78.9 fps |
+
+- Playback, all 12 files with plain ./mydecoder: **0 dropped in every run**, durations within 0.10%. Mode 2 on 1080p: Stairs 0 late, SAL 0 late. (Stairs baseline 10 late while view keys were pressed during play.)
+- Swap check SAL (5,2): fg 34.40 / bg 47.72 dB (vs (2,5) 47.52 / 34.34), 1142.8 MB, encode 130 s; played with the original, 0 dropped, 26 late (5.9%, original read alongside, on battery).
+- E4: worst encode 130 s plus real-time decode; every clip and mode well under 10 minutes.
+- Mac and sandbox agree on every size change within 1 point and every PSNR within 0.02 dB of the same-label comparison (RESULTS "P4 final").
