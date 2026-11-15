@@ -1,5 +1,10 @@
 # layer-codec
 
+```
+./myencoder input_video.mp4 n1 n2
+./mydecoder input_video.cmp
+```
+
 Video Layer Based Compression, CSCI 576 (Professor Havaldar), Fall 2026.
 
 The encoder labels every 16x16 macroblock as foreground or background from motion alone,

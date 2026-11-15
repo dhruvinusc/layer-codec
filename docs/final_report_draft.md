@@ -27,7 +27,9 @@ mp4 -> upright RGB frames (FFmpeg) -> pad to multiples of 16
 .cmp -> parse -> dequantize by block type -> inverse DCT -> crop -> play at the source frame rate
 ```
 
-Language and tools: Java 21, FFmpeg as an external program for reading frames, Swing for display, `java.util.zip` for zlib. Motion estimation, camera fitting, segmentation, the DCT, quantization, the file format, display scaling and playback timing are all hand-written.
+### 2.1 Implementation notes
+
+The codec is written in Java 21. The launchers `myencoder` and `mydecoder` (and `myencoder.bat`, `mydecoder.bat` on Windows) take exactly the brief's arguments; the only addition is an optional `--mode rle` for the encoder, off by default (section 8). FFmpeg, with ffprobe, is used only to read the input mp4: it is run as a separate program that streams upright RGB frames and reports size, frame rate and rotation. Everything the brief grades is hand-written: motion estimation, camera-motion fitting, segmentation, the 8x8 DCT and its inverse, quantization, the .cmp file format and its reader and writer, display scaling and playback timing. The Java standard library provides the window and keyboard handling (Swing), threads, and zlib (`java.util.zip`) for lossless packing of each frame.
 
 ## 3. Segmentation (encoder, part 1)
 
@@ -165,3 +167,10 @@ Inspection tools (not needed to grade):
 - `java -cp build/libs/layer-codec.jar codec.tools.VizSeg <clip> --stats --labels --sheet out.jpg` draws the segmentation overlays and writes the labels file.
 - `codec.tools.CmpDump` prints a frame in the brief's text layout.
 - `codec.tools.Psnr <mp4> <cmp>` measures PSNR per layer.
+
+## 10. Tools used
+
+- **Java 21** (Temurin JDK) for all code, built with the **Gradle** wrapper; **JUnit 5** for the 219 automated tests, including slow textbook versions of the DCT and the motion search that check the fast versions.
+- **FFmpeg / ffprobe** only to decode the input mp4 into RGB frames and read its metadata. No FFmpeg filters or encoders are used for compression, segmentation or display.
+- **AI assistance** was used for planning the work, reviewing code, and drafting documents such as this report and the decision logs. Every design choice was measured, written down with its reasons and alternatives in `docs/decision-log/`, and is understood and defended by me.
+
