@@ -437,3 +437,18 @@ Idea: add up each block's residual along its own motion track, A_t = r_t + d * A
 
 Diagnosis (Stairs f69, walker rectangle 13 x 26 blocks): accumulation works where his vectors carry his motion (A = 6 to 8 px against about 1 px around him), but only 267 of 338 blocks are eligible, the camera test still explains most of the dark, flat ones (slack 2 grey levels per pixel), and the 32 remaining candidates are scattered, so no region reaches the size minimum. Root cause is upstream: on small, flat objects the motion search's smoothness penalty gives blocks their neighbours' (camera's) vector, so most of the walker never carries his motion.
 Decision: not kept (fails the rule "keep only if video2 and SAL false foreground do not rise"; no gain on the target frames). Code reverted; P1 labels unchanged. Decision log P1-L21.
+
+### W2 / D13 Mac numbers [A] (Nov 14, Dhruvin's MacBook Air, quiet Mac, JDK 21, FFmpeg 7.1)
+
+| Check | Mac result | Target | Pass |
+|---|---|---|---|
+| `time ./myencoder data/SAL.mp4 2 5` | 1:51 wall (segmentation 203 ms/frame, compression 43 ms/frame), 424.7 MB | E4: encode + decode under 10 min | yes |
+| `./mydecoder data/SAL.cmp data/SAL.mp4` | 437 frames, 0 dropped, 19 late (4.3%; 16 of them in frames 0 to 99, warm-up), duration error +0.02% | real time | yes |
+| `./mydecoder data/video1.cmp ...` | 0 dropped, 0 late, +0.09% | real time | yes |
+| `./mydecoder data/video2.cmp ...` | 0 dropped, 1 late, +0.06% | real time | yes |
+| `./mydecoder data/Stairs.cmp ...` | two runs, both ended early ("not measured"): 3 dropped, 45 late (13.0%) on the second | real time | open, handed to Window C (P3.R) |
+| `VizSeg data/SAL.mp4 --range 16 --me-check` | hier 190 ms/frame, full 386 ms/frame, agreement 89.9%, worse-by-10% 3.9% | <= 200 ms per 1080p frame | yes |
+| `VizSeg data/video2.mp4 --range 32 --me-check` | hier 37 ms/frame, full 227, agreement 95.9%, worse 1.6% | | yes |
+| `time VizSeg data/SAL.mp4 --stats --labels` | 90.7 s wall (ME 186, seg 12.8 ms/frame) | SAL motion + segmentation <= 3 min | yes |
+
+Cross-machine labels: Mac SAL labels SHA-256 `22a4eeb79ee922d2...`, sandbox `7f203b4c6ce044a7...`; 0.11% of blocks differ (3,871 of 3.57 M). Cause: the two FFmpeg builds decode different pixels. The first 3 decoded SAL frames as rgb24 hash to `e94e45f4187e485e` on the Mac (FFmpeg 7.1) and `19a8c69638e71fbe` in the sandbox (FFmpeg 4.4). Same machine, same input: identical labels (video2, two runs). The .cmp size also differs (424.7 vs 431.0 MB) for the same reason plus zlib builds. The Mac is the authority (00 section 2): reference SAL labels hash `22a4eeb7...`.
