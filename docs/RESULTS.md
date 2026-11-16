@@ -548,3 +548,24 @@ On battery, no thermal or performance warning. `./gradlew build`: 234 tests, all
 - Swap check SAL (5,2): fg 34.40 / bg 47.72 dB (vs (2,5) 47.52 / 34.34), 1142.8 MB, encode 130 s; played with the original, 0 dropped, 26 late (5.9%, original read alongside, on battery).
 - E4: worst encode 130 s plus real-time decode; every clip and mode well under 10 minutes.
 - Mac and sandbox agree on every size change within 1 point and every PSNR within 0.02 dB of the same-label comparison (RESULTS "P4 final").
+
+## Mac re-measure (Nov 16) [L0, PM ruling Nov 16]
+P1.10 and the slides used sandbox labels (FFmpeg 4.4). These are the same final labels made on the Mac (FFmpeg 7.1). The P1.10 numbers above stay as they were; Mac numbers are the reference for the report and slides. Code unchanged (freeze-code 88fc181).
+
+| Clip | Frames analysed | Final foreground, whole clip (Mac) | P1.10 (sandbox) | Frames with no foreground (Mac / sandbox) | Naive, whole clip, same vectors (Mac) |
+|---|---|---|---|---|---|
+| SAL | 436 | 1.07% | 1.07% | 10 / 11 | 8.68% |
+| video2 | 382 | 7.25% | 6.95% | not recorded / 1 | 16.56% |
+| video1 | 517 | 2.66% | 2.70% | 19 / 16 | not run |
+| Stairs | 345 | 1.57% | 1.51% | 74 / 79 | not run |
+
+- Frames analysed excludes frame 0, which copies frame 1 (03 D4), the same convention as `VizSeg --stats`.
+- Sources: SAL, video1, Stairs from `VizSeg --stats` on the Mac, `out/mac/{SAL,video1,Stairs}_seg.csv` (means recomputed from the CSVs). video2 and both naive figures from the lab viz tool `lab.viz.Compare` on the Mac (`lab/LAB_LOG.md` [viz] Nov 16), which checks every label against a real `Segmenter.Run` and found 0 differences; SAL labels also match `out/mac/SAL.labels` exactly. video2 7.25% was also reproduced with FFmpeg 6.1.
+- Naive here uses the same seeded vectors and camera model as the final labels, so only the segmentation rules differ. The 3-frame naive numbers in "P1.5 naive baseline overlays" used an unseeded search in the sandbox.
+- Why the machines differ: the sandbox FFmpeg 4.4 decodes the mp4 slightly differently from FFmpeg 6.1 and 7.1 (which agree on video2), so a few borderline blocks change label. SAL is identical on every machine.
+
+Uneven bits (lab rd tool, Mac Nov 16, `lab/rd/RESULTS_L3.md`; its in-memory coder equals "Final Mac check" byte for byte on video2 (2,5): 85.4 / 60.9 / 54.5 MB):
+- video2, n1 fixed at 2: foreground stays at 47.7 dB while the file drops from 93.9 to 13.7 MB as n2 rises.
+- (2,6) vs (4,4): the subject gets 9.2 dB more for 41% fewer bytes.
+- SAL at a 100 Mbps budget: same foreground in every mode; background 23.2 dB in baseline vs 30.1 dB in mode 2.
+- Images: `docs/img/rd_video2_even_vs_uneven.png` (lead slide for "uneven bits"), `docs/img/rd_video2_fixed_n1.png`, `docs/img/sizes_4clips.png`, `docs/img/dct_SAL_f150.png` (DCT energy, walker vs wall).

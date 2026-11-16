@@ -48,12 +48,14 @@ Every threshold was tuned on all four clips together, never per clip, and every 
 
 The naive baseline uses the same vectors and camera model with the simplest rule: a textured block with leftover motion over 3 px, in groups of at least 4 blocks. [P1-L12]
 
-| Clip | Naive foreground, 3 sample frames (sandbox) [RESULTS "P1.5 naive baseline overlays"] | Final foreground, whole clip mean (sandbox) [RESULTS "P1.10 final labels and determinism"] |
-|---|---|---|
-| video1 | 2.4%, 7.6%, 3.8% | 2.70% |
-| video2 | 23.5%, 24.8%, 6.3% | 6.95% |
-| Stairs | 2.4%, 5.5%, 8.6% | 1.51% |
-| SAL | 12.1%, 11.1%, 3.8% | 1.07% |
+| Clip | Naive, 3 sample frames (sandbox) [RESULTS "P1.5 naive baseline overlays"] | Naive, whole clip, same vectors (Mac) [RESULTS "Mac re-measure (Nov 16)"] | Final, whole clip (Mac) [RESULTS "Mac re-measure (Nov 16)"] |
+|---|---|---|---|
+| video1 | 2.4%, 7.6%, 3.8% | not run | 2.66% |
+| video2 | 23.5%, 24.8%, 6.3% | 16.56% | 7.25% |
+| Stairs | 2.4%, 5.5%, 8.6% | not run | 1.57% |
+| SAL | 12.1%, 11.1%, 3.8% | 8.68% | 1.07% |
+
+On the same vectors and camera model, the final rules cut SAL from 8.68% to 1.07% of blocks and video2 from 16.56% to 7.25%. The whole-clip naive run differs from the sample frames above because it uses the seeded search of the final encoder.
 
 In the naive result the walker is found but the SAL brick wall and the video2 fence light up. In the final result the SAL wall is clean and the walker is found in all three sample frames. Images: `docs/img/naive_*.jpg` and `docs/img/p1_final_*.jpg`. [p1_report]
 
@@ -125,12 +127,12 @@ Sizes from the sandbox encodes; the Mac SAL file is 424.7 MB because of a differ
 
 ## 7. Limits
 
-- **Distant, slow walker on Stairs.** 79 of 346 Stairs frames have no foreground, mostly at the start while the walker is far away. [RESULTS "P1.10 final labels and determinism"]
+- **Distant, slow walker on Stairs.** 74 of 345 analysed Stairs frames have no foreground (frame 0 copies frame 1), mostly at the start while the walker is far away. [RESULTS "Mac re-measure (Nov 16)"]
   - **Why:** he moves about 2 px per frame against the camera, which is near the 0.7 px error of the camera model and the whole-pixel precision of block matching. His dark, flat jacket also takes the camera's vector through the search's smoothness penalty.
-  - **What was tried:** a lower threshold, an exact camera test, an adaptive threshold, and adding up motion over several frames. All four were measured and none kept: each found little or nothing new, and the multi-frame version raised video2's false foreground from 6.95% to between 7.6% and 9.8%. [RESULTS "P1.6 known limit", RESULTS "W3 accumulated residual for slow movers", P1-L16, P1-L21]
+  - **What was tried:** a lower threshold, an exact camera test, an adaptive threshold, and adding up motion over several frames. All four were measured and none kept: each found little or nothing new, and the multi-frame version raised video2's false foreground from 6.95% to between 7.6% and 9.8% (sandbox). [RESULTS "P1.6 known limit", RESULTS "W3 accumulated residual for slow movers", P1-L16, P1-L21]
   - **Effect:** in those frames he is compressed with the background step.
 - **Parallax on video2.** The camera runs alongside the joggers, so the fence and trees close to the camera slide faster than the far background, and a flat camera model labels them foreground.
-  - **Filter built:** it drops regions whose leftover motion points along the camera's flow, and cuts video2's foreground from 6.95% to 4.15%. [RESULTS "P1.9 step 2"]
+  - **Filter built:** it drops regions whose leftover motion points along the camera's flow, and cuts video2's foreground from 6.95% to 4.15% (sandbox; the Mac default is 7.25%). [RESULTS "P1.9 step 2"]
   - **Kept off by default:** it also deletes a real person walking against the camera's direction, and project decision D3 is to lean foreground when unsure, because a blurred person is the mistake a viewer notices. The comparison is `VizSeg --parallax 30`; images `docs/img/p1_parallax_video2_off.jpg` and `_on.jpg`. [P1-L20]
 - **Uncovered background.** When a moving object reveals background it was hiding, the revealed blocks have no good match in the previous frame, so their vectors are unreliable and can show up as small foreground fragments at the object's trailing edge. This was not measured separately; the match-quality gate and the 2-of-3 frame vote reduce it.
 - **Articulated motion.** The joggers' arms and legs move in mixed directions, so the consistency rule finds them only in part. [p1_report]

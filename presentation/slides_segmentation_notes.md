@@ -33,12 +33,14 @@ An arrow from box 7 to a small box "8x8 DCT blocks inherit the label, quantize w
 **Say:** "Same vectors and camera model. Three additions: neighbours must move the same way, the camera's motion must not explain the block just as well, and a block must be foreground in two of three frames. On SAL the wall is clean and the walker is found in all three frames."
 **Numbers:**
 
-| Clip | Naive, mean of 3 frames (sandbox) | Final, whole clip |
+| Clip | Naive, whole clip, same vectors (Mac) | Final, whole clip (Mac) |
 |---|---|---|
-| SAL | 9.0% | 1.07% |
-| video2 | 18.2% | 6.95% |
-| video1 | 4.6% | 2.70% |
-| Stairs | 5.5% | 1.51% |
+| SAL | 8.68% | 1.07% |
+| video2 | 16.56% | 7.25% |
+| video1 | not run | 2.66% |
+| Stairs | not run | 1.57% |
+
+Say it as: "On the same vectors and camera model, SAL falls from 8.68% to 1.07% of blocks and video2 from 16.56% to 7.25%." [Mac re-measure (Nov 16)]
 
 Layer effect with these real labels at (2,5): foreground 47.5 to 48.1 dB, background 34.0 to 37.6 dB, on all four clips [W2].
 **Decision trail for Q&A:** P1-L13 (consistency), P1-L15 (camera test), P1-L17 (fill), P1-L18 (2 of 3 vote), P1-L19 (tuning, one rejected setting).
@@ -46,12 +48,12 @@ Layer effect with these real labels at (2,5): foreground 47.5 to 48.1 dB, backgr
 ## Slide 5. Parallax: built, measured, kept off
 **Images, side by side:** `p1_parallax_video2_off.jpg` (default) and `p1_parallax_video2_on.jpg` (filter at 30 degrees). Same frames.
 **Say:** "The camera runs alongside the joggers. The fence close to the camera slides faster than the far background, so its leftover motion is large and very consistent, and the flat camera model calls it foreground. A filter that drops regions moving the same way as the camera's flow removes the fence and trees. But it would also remove a person walking against the camera's direction, and it did remove part of a pedestrian on video1. A blurred person is the mistake viewers notice, so the default is off."
-**Numbers:** video2 whole clip 6.95% (off) vs 4.15% (on) [P1.9 step 2]. P1-L20.
+**Numbers (sandbox):** video2 whole clip 6.95% (off) vs 4.15% (on) [P1.9 step 2]. P1-L20. The Mac default (off) is 7.25% [Mac re-measure (Nov 16)].
 
 ## Slide 6. Known limit: the distant walker on Stairs
 **Image:** `p1_final_Stairs.jpg`, and point at the first panel (frame 69, walker at the top, no red).
 **Say:** "At the start of Stairs the walker is far away and moves about 2 pixels per frame against the camera. Our camera model is accurate to about 0.7 pixels and block matching measures whole pixels, so that motion is at the noise floor. His dark jacket is also flat, and the search's smoothness term gives flat blocks their neighbours' vector, which is the camera's. I tried adding up his motion over several frames; it found almost nothing new and raised false foreground on video2, so I took it out."
-**Numbers:** 79 of 346 Stairs frames have no foreground, mostly frames 1 to 71 [P1.10]. Experiments: lower threshold, exact camera test, adaptive threshold [P1.6 known limit]; accumulated motion over frames [W3]. P1-L16, P1-L21.
+**Numbers:** 74 of 345 analysed Stairs frames have no foreground (frame 0 copies frame 1), mostly at the start [Mac re-measure (Nov 16)]. Experiments: lower threshold, exact camera test, adaptive threshold [P1.6 known limit]; accumulated motion over frames [W3]. P1-L16, P1-L21.
 **If asked how to fix it:** "In the motion search itself: a smaller smoothness penalty when a block clearly prefers its own vector, or smaller blocks for small objects. Both change every clip, so they need the whole tuning pass again."
 
 ## Slide 7. Numbers on this laptop
