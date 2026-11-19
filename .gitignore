@@ -12,3 +12,4 @@ build-tools/
 *.iml
 .vscode/
 local.properties
+.tutor_snapshot.tgz
