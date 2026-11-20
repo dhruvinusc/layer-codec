@@ -250,6 +250,8 @@ Three short lines with a small picture each:
 
 ---
 
+**CLOSING SLIDE:** "Questions" (dark, after the hidden E1 backup). It stays up during Q&A and takes no talk time.
+
 **BACKUP SLIDE AFTER THIS ONE (hidden):** `lab/viz/E1_backup_slide.png`, the parallax filter off vs on with the Mac table (video2 7.26% to 4.29%, no effect on SAL or Stairs). Show it only if he asks about the fence or the filter.
 
 ---
