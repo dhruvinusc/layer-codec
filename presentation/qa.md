@@ -86,7 +86,7 @@ AI helped with planning, code review and drafting documents; that is stated in t
 No: the same frozen code and the same thresholds as the course clips, so they test the method, not the settings. They are kept out of the official results because the brief's test set is the four course clips. *Proof:* CLIP GUIDE Mac runs; `freeze-code` 88fc181.
 
 27. **Why is the head-on car missed?**
-A car driving toward the camera grows from its centre instead of sliding, so the middle squares barely move and the edge squares move outward in opposite directions. Small motion fails the leftover test and opposite directions fail the neighbour test. *Proof:* CLIP GUIDE, cars clips; neighbour rule J16, `Segmenter.java` 297 to 309.
+A car driving toward the camera grows from its centre instead of sliding, so the middle squares barely move and the edge squares move outward in opposite directions. Small motion fails the leftover test and opposite directions fail the neighbour test. *Proof:* CLIP GUIDE, cars clips; neighbour rule J16, `Segmenter.java` 308 to 320.
 
 28. **Two people walking together became one region. Is that wrong?**
 By the brief's rule it is expected: they touch and move the same way, so contiguous plus consistent joins them, and both still get the fine step. Separating them would need content (what a person looks like), which the brief rules out by asking for motion only. *Proof:* CLIP GUIDE, shoppers; brief B7, B9.
