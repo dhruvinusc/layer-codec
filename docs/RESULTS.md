@@ -1,0 +1,571 @@
+# Results
+
+Every number here comes from a Release-equivalent run on Dhruvin's Mac (launcher, after JIT warm-up) unless marked "sandbox".
+
+## Environment
+| Item | Value |
+|---|---|
+| Machine | MacBook Air, Apple Silicon, macOS 14.2.1 |
+| JDK | Temurin 21 |
+| FFmpeg | 7.1 |
+
+## P0 probe (VideoInfo per clip)
+Sandbox run (FFmpeg 4.4), Nov 9. Matches Project doc 05 for every clip. Frames counted by reading to end of stream.
+
+| Clip | Upright size | Padded | Frames counted (tag) | fps | Rotation applied (cw) | Pipe read speed (sandbox) |
+|---|---|---|---|---|---|---|
+| video1 | 480x848 | 480x848 | 518 (518) | 30/1 | 0 | 724 fps |
+| video2 | 480x848 | 480x848 | 383 (383) | 30/1 | 90 | 403 fps |
+| Stairs | 1920x1080 | 1920x1088 | 346 (346) | 30/1 | 180 | 91 fps |
+| SAL | 1920x1080 | 1920x1088 | 437 (437) | 30/1 | 180 | 95 fps |
+
+Upright check: `docs/img/p0_upright_thumbnails.jpg` (frame 0 of each clip; Stairs text reads correctly, so 180 is a true rotation, not a mirror; sky is blue, so channel order is RGB).
+
+## P0 playback (ProbeVideo --play, Mac, uninterrupted first pass)
+| Clip | Frames | Measured | Clip duration | Error | Late frames (> half a period) | Window scale |
+|---|---|---|---|---|---|---|
+| video2 | 383 | 12.74 s | 12.77 s | -0.2% | 4 (1.0%) | 0.92 |
+| video2 (rerun) | 383 | 12.75 s | 12.77 s | -0.1% | 0 (0.0%) | 0.92 |
+| SAL, Java2D scaling (before P0-D8) | 437 | 20.83 s | 14.57 s | +43.0% | 437 (100%) | 0.72 |
+| SAL, own scaler (P0-D8), run 1 | 437 | 14.55 s | 14.57 s | -0.1% | 2 (0.5%) | 0.72 |
+| SAL, own scaler (P0-D8), run 2 | 437 | 14.53 s | 14.57 s | -0.2% | 6 (1.4%) | 0.72 |
+
+Per-frame cost for SAL with P0-D8 (Mac): decode 5.5 to 5.6 ms, pack+scale 1.6 ms, paint 5.8 to 8.1 ms, total about 13 to 15 ms of the 33.3 ms budget.
+
+## P0 speed gate (SpeedGate on SAL frames 100 to 129, after JIT warm-up)
+| Test | Mac (8 cores) | Sandbox (4 cores) | Target | Verdict |
+|---|---|---|---|---|
+| (a) Display 300 x 1080p at 30 fps, late frames | 2 (0.7%) | no screen | < 2% | PASS |
+| (b) 16x16 SAD, random positions | 139.6 ns | 166.1 ns | report | full search +/-16 would be 1.24 s per 1080p frame, +/-32 4.8 s: hierarchical search is required (D2) |
+| (c) Naive separable 8x8 IDCT, 1920x1088 x 3 channels (97,920 blocks) | 77.2 ms 1 thread, 15.3 ms all cores | 87.2 / 21.8 ms | < 25 ms all cores | PASS |
+| (d) One frame in D7 layout, zlib level 1 (fake labels, n1=2, n2=5) | 12.57 MB to 1.22 MB (10.3x); deflate 30.4 ms, inflate 15.3 ms | 1.27 MB (9.9x); 46.6 / 15.3 ms | report | zlib is cheap; ratio beats the 7x estimate in Project doc 05 |
+
+Decoder budget at 1080p, serial: inflate 15.3 + IDCT 15.3 (all cores) + paint 6 to 8 = 37 to 39 ms, over 33.3 ms. The decoder must pipeline (decode-ahead threads, D8); per-frame zlib chunks let inflate run in parallel too.
+
+## P1 segmentation
+
+### P1.1 full search reference (sandbox, Nov 10; Mac timings come with P1.3)
+One frame pair per clip, Y plane, padded frame. "At range edge" = share of blocks whose best vector has |dx| or |dy| equal to R, a sign the true motion is outside the window. Time is the second run (after JIT warm-up), single thread, early exit on SAD.
+
+| Clip, frame | R | Blocks | ms/frame | Mean MAD | At range edge | Most common vectors (dx,dy = count) |
+|---|---|---|---|---|---|---|
+| video2, 100 | 16 | 1590 | 67 | 5.76 | 29.3% | -16,-3 = 168; -14,-3 = 125; -14,-2 = 87 |
+| video2, 100 | 32 | 1590 | 212 | 4.08 | 2.2% | -14,-3 = 125; -14,-2 = 86; -16,-3 = 71 |
+| SAL, 200 | 16 | 8160 | 382 | 3.08 | 3.3% | 7,0 = 3048; 6,0 = 1069; 8,0 = 810 |
+| Stairs, 170 | 16 | 8160 | 328 | 3.36 | 1.2% | -6,0 = 918; -5,0 = 905; -6,1 = 345 |
+| video1, 250 | 16 | 1590 | 61 | 1.84 | 10.1% | 0,0 = 253; 6,1 = 171; 5,1 = 75 |
+
+Reading: SAL's camera pans 6 to 8 px per frame and Stairs 5 to 6 px, matching doc 05. video2 at R=16 has 29% of blocks pinned at the window edge; at R=32 that drops to 2.2% and mean MAD falls from 5.76 to 4.08, so +/-32 is needed there (D2). Early exit makes full search about 3x faster than the P0 speed gate estimate (1.24 s), but it is still the reference, not the default.
+
+| Clip | ME ms/frame full | ME ms/frame hier | Agreement within 1 px | Camera model mix | Mean inlier ratio | Mean foreground % | Regions/frame |
+|---|---|---|---|---|---|---|---|
+| video1 | 64 (R16) | 37 | 91.7% (real misses 4.0%) | homography 517 of 517 | 0.774 | 2.70% | 2.99 |
+| video2 | 224 (R32) | 37 | 95.8% (real misses 1.6%) | homography 381, translation 1 | 0.737 | 6.95% | 7.53 |
+| Stairs | 340 (R16) | 193 | 91.8% (real misses 3.0%) | homography 345 of 345 | 0.904 | 1.51% | 1.21 |
+| SAL | 383 (R16) | 193 | 89.8% (real misses 4.0%) | homography 436 of 436 | 0.853 | 1.07% | 1.76 |
+
+Final P1 settings, whole clips, sandbox timings (Mac numbers come from the quiet-Mac run, D13). Details: RESULTS "P1.3" (search), "P1.5" (camera), "P1.8" and "P1.9" (labels).
+
+## P2 compression (Window B)
+
+### P2.6 CodecHarness first real-clip runs (sandbox, Nov 11; correctness only, timings NOT authoritative, Mac numbers come in P2.9)
+Fake checkerboard labels (half the macroblocks foreground) unless noted. PSNR is the mean of per-frame PSNR over R, G, B.
+
+| Clip, frames | n1, n2 | Stored MB/frame (zlib) | Ratio vs raw | PSNR all / fg / bg (dB) |
+|---|---|---|---|---|
+| video2, 20 | 0, 0 | 1.07 | 2.30x | 59.19 / 59.19 / 59.18 |
+| video2, 20 | 2, 5 | 0.46 | 5.35x | 35.53 / 47.47 / 32.67 |
+| video2, 20 | 5, 2 | 0.46 | 5.36x | 35.55 / 32.68 / 47.47 |
+| SAL, 6 | 0, 0 | 4.91 | 2.56x | 59.00 / 58.99 / 59.00 |
+| SAL, 6 | 1, 7 | 2.24 | 5.62x | 29.82 / 52.23 / 26.82 |
+
+- n = 0 loses only rounding (59 dB, H2 target >= 45). Swapping n1 and n2 swaps the fg/bg PSNR almost exactly (47.47 / 32.67 vs 32.68 / 47.47): early D5 evidence.
+- The near-exact PSNR mirror is a checkerboard artifact: both halves of the checkerboard hold statistically similar content, so swapping n1 and n2 swaps the numbers almost perfectly. With real labels (moving person vs scenery) the two layers differ in content, so the swap reverses which layer is cleaner but the numbers will not mirror exactly.
+- zlib ratio depends on the foreground share. SAL (2,5), 3 frames: all-fg 4.39x, checker 6.31x, all-bg 13.16x. The P0 speed gate's 10.3x used 1 in 7 blocks foreground, which fits between these; no contradiction.
+- Images: `docs/img/p2_SAL_n1_7_checker_crop1to1.png` (1:1, original | decoded: alternate macroblocks smeared at n=7, sharp at n=1), `docs/img/p2_video2_n2_5_checker_crop1to1.png`, `docs/img/p2_video2_n5_2_checker_crop1to1.png`, `docs/img/p2_video2_n2_5_checker_half.png` (side by side at half scale). At half scale the difference is barely visible, which supports the 1:1 zoom in D8.
+- Determinism: the synthetic end-to-end test runs the harness twice and checks equal SHA-256 (`CodecHarnessTest`).
+
+### P2.9 Mac measurements (Nov 11, MacBook Air M-series, 8 cores, JDK 21, via `bash out/p29.sh`)
+CodecHarness, fake checkerboard labels (half the macroblocks foreground), zlib level 1, 8 threads unless noted. video2 = first 120 frames (480x848), SAL = first 60 frames (1920x1080, padded 1088). Times are per frame and exclude reading the mp4. Raw output: `out/p29.txt`.
+
+| Clip | n1, n2 | Stored MB/frame | Ratio | Encode ms | Decode ms | PSNR all / fg / bg (dB) |
+|---|---|---|---|---|---|---|
+| video2 | 0, 0 | 0.81 | 3.03x | 22.4 | 8.6 | 59.47 / 59.47 / 59.47 |
+| video2 | 2, 5 | 0.35 | 6.99x | 15.1 | 6.5 | 37.22 / 48.14 / 34.39 |
+| video2 | 5, 2 | 0.35 | 7.00x | 12.9 | 7.5 | 37.23 / 34.40 / 48.14 |
+| video2 | 1, 7 | 0.38 | 6.37x | 13.7 | 6.7 | 29.72 / 52.76 / 26.73 |
+| video2 | 4, 4 | 0.26 | 9.38x | 10.9 | 5.6 | 38.80 / 38.80 / 38.79 |
+| SAL | 0, 0 | 4.21 | 2.98x | 136.7 | 45.6 | 58.97 / 58.97 / 58.97 |
+| SAL | 2, 5 | 1.79 | 7.00x | 71.6 | 30.8 | 37.29 / 47.74 / 34.48 |
+| SAL | 5, 2 | 1.79 | 7.03x | 66.0 | 31.7 | 37.29 / 34.48 / 47.74 |
+| SAL | 1, 7 | 2.01 | 6.26x | 70.9 | 31.4 | 29.81 / 52.21 / 26.81 |
+| SAL | 4, 4 | 1.31 | 9.59x | 53.6 | 27.2 | 38.79 / 38.80 / 38.79 |
+| SAL, 1 thread | 2, 5 | 1.79 | 7.00x | 113.0 | 52.4 | same as 8 threads |
+| SAL, `--raw` | 2, 5 | 12.57 | 1.00x | 33.5 | 16.5 | same as zlib |
+
+What the numbers say
+- Layer effect holds at both sizes: (2,5) gives fg about 48 dB vs bg about 34 dB; (5,2) reverses it; (1,7) widens the gap to about 26 dB. (The near-exact mirror is the checkerboard artifact noted in P2.6.)
+- n = 0 loses only rounding: 59 dB on both clips (H2 target >= 45 dB).
+- Determinism: SAL (2,5) has the same SHA-256 (`5fb928af...`) with 8 threads and with 1 thread, so threading never changes the file.
+- zlib is lossless (raw and zlib runs give identical PSNR) and worth 3x (n=0) to 9.6x (4,4); size falls as n rises.
+- zlib cost per 1080p frame, from the raw vs zlib rows: deflate about 38 ms (71.6 - 33.5), inflate about 14 ms (30.8 - 16.5). Both are single-threaded per frame, which is why 8 threads only speed one frame up 1.6 to 1.7x.
+- Decoder budget (03 D8): one 1080p frame decodes in 27 to 32 ms at typical settings but 45.6 ms at n = 0, against 33.3 ms at 30 fps, before painting. Single-frame decoding cannot hold real time in the worst case: P3 must decode several frames ahead in parallel (frame-level parallelism also parallelizes inflate).
+- Encode budget: worst case SAL n=0 at 136.7 ms/frame is about 60 s for all 437 frames, plus segmentation. Comfortably inside the 10-minute limit.
+- Images (Mac run, frame 30 of SAL, 1:1, original | decoded): `docs/img/p29_SAL_n0_0_crop1to1.png`, `p29_SAL_n2_5_crop1to1.png`, `p29_SAL_n5_2_crop1to1.png`, `p29_SAL_n1_7_crop1to1.png`, `p29_SAL_n4_4_crop1to1.png`; video2 side by side `docs/img/p29_video2_n2_5_half.png`.
+
+## P3 decoder (Window C)
+
+### P3.1 DecodePipeline bench (Mac, Nov 12, 8 cores, JDK 21, `./mydecoder <cmp> --bench --workers 1,2,4,6`)
+Test files from CodecHarness (fake checkerboard labels), SAL first 60 frames, 1920x1080. Serial = one core, `DecodeCore.decode`, 30 frames after a warm-up pass. Pipeline = full 60 frames, consumer pulls as fast as it can (no display).
+
+| File | Serial 1 core | 1 worker | 2 workers | 4 workers | 6 workers (default) |
+|---|---|---|---|---|---|
+| SAL (0,0), worst case | 71.9 ms | 72.1 ms, 13.9 fps | 41.0 ms, 24.4 fps | 24.6 ms, 40.7 fps | 21.0 ms, 47.7 fps (1.59x real time) |
+| SAL (2,5) | 54.1 ms | 53.9 ms, 18.6 fps | 31.4 ms, 31.9 fps | 16.5 ms, 60.7 fps | 17.0 ms, 58.9 fps (1.96x real time) |
+
+What the numbers say
+- Single-core n=0 decode is 71.9 ms, about 1.6x the 8-core 45.6 ms in P2.9: one frame alone is more than twice the 33.3 ms budget.
+- The pipeline turns that into 21.0 ms per frame at n=0 with 6 workers (47.7 fps), so the worst case holds 30 fps with 37% headroom; (2,5) runs at about 2x real time.
+- Scaling is near-linear to 4 workers (2.9x at n=0, 3.3x at (2,5)), then flattens: 6 workers add 17% at n=0 and nothing at (2,5). The Air likely has 4 performance and 4 efficiency cores, plus shared memory bandwidth (each 1080p frame is about 25 MB of int planes). Default stays max(2, cores-2) = 6 because it is best at n=0, the case that needs it.
+- Peak buffered stayed 1 to 6 (capacity 8): with no display the consumer drains as fast as workers produce. Real buffering is measured in P3.3 with the player.
+- Pipeline at 1 worker equals serial (72.1 vs 71.9 ms), so the pipeline adds no measurable overhead.
+
+### P3.3 Player, Mac run 1 (Nov 12, BEFORE the pre-roll fix; kept for honesty)
+`./mydecoder <file> [--workers N]`, uninterrupted first pass. Short test files (fake checkerboard labels).
+
+| File | Workers | Dropped | Late | Played vs clip | Mean wait for a frame |
+|---|---|---|---|---|---|
+| video2 (2,5), 120 f | 6 | 19 (15.8%), all in frames 0..19 | 3 | 3.33 s vs 4.00 s (-16.8%) | 0.8 ms |
+| SAL (2,5), 60 f | 6 | 12 (20.0%) | 16 (26.7%) | 1.76 s vs 2.00 s (-12.1%) | 10.1 ms |
+| SAL (2,5), 60 f | 4 | 4 (6.7%) | 5 (8.3%) | 1.81 s vs 2.00 s (-9.3%) | 1.9 ms |
+| SAL (0,0), 60 f | 6 | 8 (13.3%) | 20 (33.3%) | 1.78 s vs 2.00 s (-11.2%) | 5.6 ms |
+| SAL (0,0), 60 f | 4 | 5 (8.3%) | 7 (11.7%) | 1.81 s vs 2.00 s (-9.5%) | 4.0 ms |
+
+Diagnosis
+- Bug, not speed: the clock started before frame 0 reached the screen. Window creation, the first cold decode and the first paint (about 0.6 s) counted as falling behind, so the first frames were dropped and the measured time was short by exactly that amount (video2: 19 frames = 0.63 s; 4.00 - 0.63 = 3.37 s, measured 3.33 s). video2's last 100 frames had 0 drops at 30.4 fps, and its mean wait was 0.8 ms: decoding was never the problem.
+- Fix (P3-D7): pre-roll. Show frame 0, wait until frames 1..6 are decoded (at most 1 s), then start the clock. Test `slowStartIsAbsorbedByPrerollNotCountedAsDrops` (0.6 s cold start: 0 drops, 4.00 s).
+- 4 vs 6 workers: 6 workers had 2.5x to 3x more late frames on SAL. Likely cause: the display scaler runs its rows on Java's shared thread pool, which competes with 6 decode workers for 8 cores (4 of them efficiency cores). Re-measured after the fix before deciding the default.
+
+### P3.3 Player, Mac run 2 (Nov 12, after the pre-roll fix P3-D7)
+| File | Workers | Dropped | Late (> 16.7 ms) | Played vs clip | Mean wait | First 100 / last 100 frames |
+|---|---|---|---|---|---|---|
+| video2 full (2,5), 383 f | 6 | 5 (1.3%) | 6 (1.6%) | 12.77 s vs 12.77 s (+0.04%) | 0.6 ms | 2 drops, 4 late / 3 drops, 2 late |
+| video2 full (2,5), 383 f | 4 | 22 (5.7%) | 27 (7.0%) | 12.77 s vs 12.77 s (+0.02%) | 0.4 ms | 12 drops, 15 late / 0 drops, 0 late (30.0 fps) |
+| SAL (2,5), 60 f | 6 | 2 (3.3%) | 27 (45.0%) | 2.01 s vs 2.00 s (+0.41%) | 7.2 ms | same 60 frames |
+| SAL (2,5), 60 f | 4 | 0 | 6 (10.0%) | 2.01 s vs 2.00 s (+0.35%) | 4.6 ms | same 60 frames |
+| SAL (0,0), 60 f | 6 | 0 | 18 (30.0%) | 2.01 s vs 2.00 s (+0.27%) | 3.5 ms | same 60 frames |
+| SAL (0,0), 60 f | 4 | 0 | 5 (8.3%) | 2.01 s vs 2.00 s (+0.60%) | 3.3 ms | same 60 frames |
+
+What the numbers say
+- Pre-roll fixed the duration: every clip now plays in its true length within 0.6% (H3 target 1%), at both 480p and 1080p.
+- 1080p: 4 workers beat 6 in all four SAL runs across runs 1 and 2 (late 8 to 12% vs 27 to 45%), with zero drops. The display scaler and paint share the 8 cores (4 of them efficiency cores) with the decode workers, so fewer workers leaves room to paint on time. Default changed to 4 (P3-D8).
+- 480p: video2 decodes in under 1 ms of waiting either way; its drops and late frames sit in the first 100 frames (warm-up), and the last 100 frames ran clean at 30 fps with 4 workers. Worker count does not matter at this size.
+- Limitation of these runs: the SAL files are only the first 60 frames, so all of SAL is warm-up. Steady-state 1080p late % (H3 target under 2%) needs a longer file: SAL first 200 frames at (2,5), generated on the Mac (run 3).
+
+### P3.3 Player, Mac run 3 (Nov 12): SAL first 200 frames (2,5), 361.7 MB
+| Workers | Order | Dropped | Late | Played vs clip | Mean wait | Frames 0..99 | Frames 100..199 |
+|---|---|---|---|---|---|---|---|
+| 4 | 1st, right after encoding the 362 MB file | 94 (47.0%) | 37 (18.5%) | 7.28 s vs 6.67 s (+9.2%) | 38.1 ms | 100 shown, 31 late, 29.8 fps | 6 shown, 94 dropped, 1.6 fps |
+| 6 | 2nd | 0 | 0 | 6.67 s vs 6.67 s (+0.08%) | 1.5 ms | 100 shown, 30.0 fps | 100 shown, 30.0 fps |
+
+Reading: the 4-worker run collapsed in its second half (a few very long waits: about 4 s of waiting over 106 paints, almost all in frames 100..199), while 6 workers on the same frames were perfect. The bench says 4 workers decode this file at about 60 fps, so this is a stall (disk, memory clean-up or CPU slowdown), not decode speed. Run order matches the earlier pattern: in every SAL pair so far, the FIRST run was the worse one, whatever its worker count. Runs 1 to 3 therefore do not compare 4 and 6 fairly. Run 4 (`out/p3/run4.sh`) cools down first, alternates 4,6,6,4 with pauses, and logs per-frame waits and Java memory clean-up (GC) pauses. The default stays 4 only provisionally (P3-D8) until run 4.
+
+### P3.3 Player, Mac run 4 (Nov 12): fair 4 vs 6 workers, SAL first 200 frames (2,5)
+`out/p3/run4.sh`: 60 s cool-down, order 4,6,6,4, 20 s pauses, per-frame traces `out/p3/r4_trace_*.csv`, GC logs `out/p3/r4_gc_*.log`. Plus one extra 4-worker run straight after re-encoding the file (the run 3 situation).
+
+| Run | Workers | Dropped | Late (> 16.7 ms) | Played vs clip | Late in frames 100..199 | Worst lateness | Longest gap between paints | Wait p99 / max |
+|---|---|---|---|---|---|---|---|---|
+| extra, right after encode | 4 | 0 | 9 (4.5%) | +0.08% | 0 | | | |
+| 4a | 4 | 0 | 11 (5.5%) | +0.07% | 1 | 46.2 ms (frame 7) | 74.2 ms | 19.4 / 27.3 ms |
+| 6a | 6 | 0 | 17 (8.5%) | +0.13% | 8 | 41.1 ms | 51.0 ms | 18.9 / 18.9 ms |
+| 6b | 6 | 0 | 6 (3.0%) | +0.07% | 2 | 41.4 ms | 51.4 ms | 7.5 / 17.4 ms |
+| 4b | 4 | 0 | 1 (0.5%) | +0.07% | 0 | 37.6 ms (frame 7) | 65.7 ms | 4.3 / 4.5 ms |
+
+Bench on the same 200 frames: serial 51.0 ms/frame; 4 workers 17.5 ms = 57.2 fps (1.91x real time); 6 workers 14.7 ms = 67.9 fps (2.26x). Thermal: no warning recorded.
+
+What the numbers say
+- Drop counting checked against the traces: every frame is either painted or flagged dropped, none is neither or both. Zero drops in all five runs is real. A frame is dropped only if it is already a full period behind when the player picks it; the worst frame here finished 46 ms after its deadline but was about 13 ms late when chosen, so it counts as late, not dropped.
+- 4 vs 6, fair order: 4 workers averaged 3.5% late (0.5 to 5.5%), 6 workers 5.75% (3.0 to 8.5%); in the steady part (frames 100..199) 4 workers had 0 to 1 late frames, 6 workers 2 to 8. Both 0 drops, both on time to 0.13%. 4 workers stay the default (P3-D8 confirmed); 6 decode faster in the bench but the extra speed is not needed.
+- Late frames cluster in the first 2 seconds (frames 7 to 62): Java compiles the hot code while it runs (JIT warm-up). Steady-state 1080p meets the H3 target (under 2% late, zero drops); counted over the whole clip including warm-up it is 0.5 to 5.5%.
+- Run 3's collapse did not come back, even straight after re-encoding the 362 MB file. GC pauses are small (largest 25 ms, total 33 to 82 ms per run), so memory clean-up is not the cause. Most likely a one-off disk stall on a 94% full disk; freeing disk (06 item D9) also lowers the demo risk.
+
+### P1.3 hierarchical vs full search [A/P1] (sandbox, 4 cores, not authoritative for speed; Mac run queued)
+`VizSeg <clip> --range R --me-check`: 5 evenly spaced frame pairs per clip. Agreement = both vector components within 1 px of full search, counted on textured blocks only (block variance >= 100). "Worse" = the hierarchical match error is more than 10% above full search's (a real miss, not an equally good alternative). Final version: 3 levels, +/-8 coarse (about +/-32 px), 3 coarse starts refined separately, +/-2 refine, extra candidates, +/-1 polish, lambda 4.
+
+| Clip | Full R | Textured blocks | Agree, lambda 4 | Agree, lambda 0 | Worse by >10% | Full ms/frame | Hier ms/frame |
+|---|---|---|---|---|---|---|---|
+| video2 | 32 | 5,348 | 95.8% | 95.9% | 1.6% | 224 | 37 |
+| video1 | 16 | 2,648 | 91.7% | 91.1% | 4.0% | 64 | 37 |
+| Stairs | 16 | 26,943 | 91.8% | 91.6% | 3.0% | 340 | 193 |
+| SAL | 16 | 28,240 | 89.8% | 89.5% | 4.0% | 383 | 193 |
+| SAL (check) | 32 | 28,240 | 87.9% | 88.8% | 6.6% | 1,334 | 195 |
+
+How the design got there (SAL agreement): single coarse winner 87.3%, plus a +/-1 polish 89.0%, plus 3 coarse starts 89.8%. Each step cost: hier 108 to 109 to 193 ms per 1080p frame (sandbox).
+Reading: 3 of 4 clips meet the 90% target; SAL is 0.2 points short. Most SAL disagreements are equally good matches on the brick wall's repeating pattern: with a wider +/-32 full search, full search finds even lower-error matches further away (6.6% "worse"), which are period-shifted aliases, not true motion. On periodic texture the lowest match error is not the true vector, which is why lambda exists and why segmentation also requires neighbours to agree (P1.6).
+
+### P1.4 reliability [A/P1] (sandbox, same 5 frame pairs as P1.3, hierarchical vectors)
+Reliable = block Y variance >= 100 and best-match MAD <= 12 (`Segmenter.SegConfig.DEFAULT`).
+
+| Clip | Reliable blocks |
+|---|---|
+| video1 | 31.4% |
+| video2 | 59.4% |
+| Stairs | 64.3% |
+| SAL | 68.5% |
+
+Reading: video1 is a night scene with large dark, flat areas, so most blocks carry no usable motion evidence (doc 05 predicted 37 to 52% textured before the match test). These blocks are not labelled from their own vector; P1.7 gives them their neighbours' label. Thresholds are revisited in P1.9 tuning.
+
+P1.3 acceptance note [A/P1, Nov 13]: PM accepted SAL at 89.8% agreement (target 90%) because the disagreements are equal-quality brick aliases; the real-miss figure ("worse by >10%") is 4.0% on SAL and 1.6 to 4.0% across clips. Both numbers are reported together from here on. Decision log P1-L10.
+
+### P1.5 camera motion [A/P1] (sandbox, 4 cores, every frame pair of every clip; fit times not authoritative)
+`VizSeg <clip> --cam-stats`: hierarchical vectors, reliable blocks only (P1.4), RANSAC homography (500 iterations, seed 576, inlier distance 2.5 px, refit twice on inliers), fallback to affine then translation below 30% inliers or when the fit throws a frame corner more than 20% of the frame side. Per-frame CSV in `out/viz/<clip>_cam.csv`.
+
+| Clip | Pairs | Model mix | Mean inlier ratio (min) | Mean inlier error | Reliable blocks | Doc 05 prototype (homography, 3 px, textured) |
+|---|---|---|---|---|---|---|
+| video1 | 517 | homography 100% | 0.770 (0.357) | 1.07 px | 32.3% | 0.77 to 0.81 |
+| video2 | 382 | homography 381, translation 1 | 0.737 (0.177) | 1.07 px | 58.7% | 0.58 to 0.63 |
+| Stairs | 345 | homography 100% | 0.902 (0.675) | 0.72 px | 63.6% | 0.89 to 0.95 |
+| SAL | 436 | homography 100% | 0.853 (0.613) | 0.61 px | 66.9% | 0.75 to 0.84 |
+
+Reading: on the three 30 fps walking/pan clips the homography explains 77 to 90% of trustworthy blocks within 2.5 px, matching or beating the prototype. video2 is higher than the prototype because unreliable blocks no longer vote. The one fallback is video2 frame 30 (18% inliers, translation); its other low frames (60, 150, 180 at about 38%) are where the tracking shot shakes. Those frames are the reason for the 2-of-3 temporal vote in P1.8. Fit cost 1.5 to 10 ms per frame, small next to motion search.
+
+### P1.5 naive baseline overlays [A/P1] (saved BEFORE any segmentation tuning)
+`VizSeg <clip> --naive --sheet docs/img/naive_<clip>.jpg` at 20/50/80% of each clip. Naive = one frame, P1.5 camera model, a textured block (variance >= 100) is foreground if its residual is over 3 px, 4-connected groups of at least 4 blocks kept. No match gate, no direction consistency, no cleaning, no temporal vote.
+
+| Clip | Frames | Foreground % | What it gets right | What it gets wrong |
+|---|---|---|---|---|
+| video1 | 103, 259, 414 | 2.4, 7.6, 3.8 | cyclist, one pedestrian | most dark pedestrians missed; crosswalk stripe edges and building edges false |
+| video2 | 76, 191, 306 | 23.5, 24.8, 6.3 | both joggers partly | ground, fence and trees false (parallax and fast shake) |
+| Stairs | 69, 173, 276 | 2.4, 5.5, 8.6 | walker outline | flat jacket interior missed; railings and bricks scattered false |
+| SAL | 87, 218, 349 | 12.1, 11.1, 3.8 | walker legs and body | large false patches on the brick wall (period aliases), paving tiles |
+
+Images: `docs/img/naive_video1.jpg`, `naive_video2.jpg`, `naive_Stairs.jpg`, `naive_SAL.jpg` (half size, three frames each). P1.6 to P1.9 are judged against these.
+
+### P3.4 / P3.4b Mac checks, Nov 13 (D14)
+- Error path (P3.6): `./mydecoder data/SAL.mp4` prints `error: not a .cmp file (magic 0x00000014, expected LYRC)` and exits 1. PASS.
+- View (P3.4, P3.5): side by side, 1:1 zoom (same region in both halves), drag, overlay and status tags work (Dhruvin's screenshot). The grey area in the screenshot came from maximizing the window. Step back 35 frames: not yet tried.
+- Playback WITH the original mp4 (first version, original read on the player thread): SAL_2_5 60 frames dropped 27 (45%) and 8 (13%) in two runs, vs 0 drops without the original. Fixed in P3.4c (background reader); re-measure pending.
+- run4.sh repeated twice for P3.4b; neither run counts as a clean measurement:
+  - Run A (about 14:15): bench 4 workers 45.1 fps vs 57.2 on Nov 12 (same file), single core 54.4 vs 51.0 ms: the Mac was loaded (another build window was working in the device VM, which runs on the same Mac). 6b was interrupted by a key.
+  - Run B (about 14:22): bench 52.2 fps (4 workers), 64.1 (6). 4a collapsed (100 dropped, mean wait 23.5 ms). Its trace shows two whole-process freezes: a 1.36 s wait at frame 86 and a 1.84 s gap between paints at frame 147 with no decoder wait; GC max 7.7 ms. So the process itself was stopped (most likely system memory swapping on a 94% full disk), not slow decoding. 6b, the cleanest run: 0 dropped, 5 late (2.5%), +0.07%. 4b quit early with q.
+- P3.4b verdict: not decided yet. Next timing runs only on a quiet Mac (00/06 timing rule) after freeing disk (D9).
+- P3.4c check (Nov 13, about 14:38, back to back, traces out/p3/t_*.csv): SAL_2_5 60 frames WITHOUT the original: 5 dropped (frames 15 to 23), 9 late, +0.23%, max wait 51.5 ms (a short hiccup in the first run after the build). WITH the original (read ahead on its own thread): 0 dropped, 1 late (1.7%), 30.0 fps, +0.14%, max wait 23.7 ms. The background reader removes the drops seen with the first version (13 to 45%). An earlier P3.4c run at 14:32 (65% dropped, mean decoder wait 55.4 ms) came straight after a build on a loaded Mac and is not counted.
+
+### P1.6 grouping [A/P1] (sandbox; same frames as the naive sheets: 20/50/80% of each clip)
+`VizSeg <clip> --seg --sheet ...`. Candidates = eligible blocks (good match, texture >= 20) not explained by the camera, residual > 2.5 px; 4-connected growth where a neighbour joins only if its residual is within 2 px, or both are >= 4 px long and within 30 degrees; regions kept if >= max(4, 0.2% of blocks) and robust spread (median distance from the median residual) <= 3 px.
+
+Foreground % per frame (three frames per clip), as each change was added:
+
+| Step | video1 | video2 | Stairs | SAL |
+|---|---|---|---|---|
+| Naive (P1.5) | 2.4 / 7.6 / 3.8 | 23.5 / 24.8 / 6.3 | 2.4 / 5.5 / 8.6 | 12.1 / 11.1 / 3.8 |
+| A: consistency grouping, reliable blocks only, RMS spread <= 3 | 1.5 / 4.5 / 1.6 | 7.6 / 7.2 / 2.7 | 0.0 / 0.2 / 0.4 | 1.3 / 1.5 / 0.6 |
+| B: + looser candidate gate (texture >= 20) | 2.9 / 5.8 / 2.2 | 8.4 / 9.7 / 2.6 | 0.2 / 0.2 / 0.0 | 1.6 / 1.0 / 1.2 |
+| C: + robust spread (median), cap 3 px | 4.2 / 6.2 / 3.1 | 14.5 / 11.8 / 4.3 | 0.2 / 3.6 / 2.1 | 2.7 / 5.6 / 1.5 |
+| D: + camera-explained test (final P1.6) | 3.1 / 3.5 / 1.9 | 12.5 / 11.3 / 3.4 | 0.0 / 3.0 / 1.9 | 1.9 / 3.7 / 1.2 |
+
+Region-level checks (diagnostic on the walker's block rectangle): Stairs f173, walker blocks kept: A 0, C 222 of 559. SAL f218, walker blocks kept with robust spread cap 2 px: 0; cap 3 px: 88 (torso residual about 9 px, legs 16 to 25 px, real articulated motion).
+
+Reading (images `docs/img/p16_*.jpg`, checked by eye): step A removed most false foreground but also the walkers, because their flat clothing failed the texture test (Stairs f173: 225 of 559 walker blocks textured, 539 well matched). B and C bring the walkers back. D removes 15 to 44% of what remains on SAL and video1 (brick and stripe aliases that match the camera's vector as well as their own). Result vs naive: SAL brick-wall false foreground down from 11 to 12% to 1 to 4%, walker found in all three SAL frames; video2 halved; Stairs walker found in f173 and f276. Remaining: Stairs f69 walker missed (small and far, see P1.6 note below), some brick patches on SAL, video2 trees and fence (parallax).
+
+P1.6 known limit [A/P1, Nov 14]: Stairs frame 69 (walker far away at the top of the stairs) stays unlabelled. His residual is a clean, consistent (2, -1) px, about 2.2 px, while the camera fit error is 0.70 px and block matching works in whole pixels. Experiments on all 12 sheet frames (foreground %):
+
+| Setting | Stairs f69 | video1 (3 frames) | video2 (3 frames) | SAL (3 frames) |
+|---|---|---|---|---|
+| Final P1.6 (camera window 1 px, residual > 2.5 px) | 0.0 | 3.1 / 3.5 / 1.9 | 12.5 / 11.3 / 3.4 | 1.9 / 3.7 / 1.2 |
+| Residual > 1.5 px | 0.0 | 3.6 / 5.6 / 2.1 | 15.5 / 15.7 / 6.5 | 1.9 / 3.7 / 1.2 |
+| Camera window 0, residual > 1.5 px | 0.6 | 5.4 / 8.3 / 4.9 | 19.4 / 20.1 / 12.1 | 3.4 / 3.8 / 2.7 |
+| Threshold max(1.5, 2.5 x camera error) | 0.0 | 3.1 / 3.2 / 1.2 | 11.6 / 8.0 / 3.4 | 1.9 / 3.7 / 1.2 |
+
+Recovering a quarter of that walker would nearly double false foreground on video2. Decision (time box 2 h, used 45 min): accept as a known limit. Fix for later (out of P1 scope): accumulate residual over several frames, so a 2 px/frame mover shows 6 px over three frames.
+
+### P1.7 fill [A/P1] (sandbox; same 12 frames)
+`Segmenter.fill`: (1) a background block with >= 3 of 4 neighbours in one region joins it; (2) a background pocket not touching the border, bordered by one region and no larger than it, is filled; (3) optional 1-block dilation.
+
+| Clip | After P1.6 grouping | + vote and hole fill (kept) | + 1-block dilation (rejected) |
+|---|---|---|---|
+| video1 | 3.1 / 3.5 / 1.9 | 3.1 / 3.6 / 1.9 | 8.0 / 6.8 / 4.7 |
+| video2 | 12.5 / 11.3 / 3.4 | 12.7 / 11.9 / 3.5 | 25.2 / 23.3 / 7.7 |
+| Stairs | 0.0 / 3.0 / 1.9 | 0.0 / 3.4 / 2.0 | 0.0 / 4.7 / 3.5 |
+| SAL | 1.9 / 3.7 / 1.2 | 2.0 / 3.9 / 1.2 | 3.2 / 6.6 / 2.0 |
+
+Reading (`docs/img/p17_*.jpg`, checked by eye): vote and hole fill add 0 to 0.6 points and make the Stairs f173 torso solid instead of speckled. Dilation roughly doubles foreground on every clip because it grows the false regions as much as the people, so it stays off (`SegConfig.dilate = false`). Walkers' dark trousers on Stairs remain background (flat, no texture, see P1.6 known limits).
+
+### P1.8 temporal vote, whole clips [A/P1] (sandbox, 4 cores; timings not authoritative, Mac run on Nov 16)
+`VizSeg <clip> --stats --sheet docs/img/p18_<clip>.jpg`: the full streamed pipeline (`Segmenter.Run`): hierarchical search seeded with the previous field and camera vector, reliability, camera fit, candidate gate, grouping, fill, 2-of-3 vote read through motion. Per-frame CSV `out/viz/<clip>_seg.csv`. Frame 0 copies frame 1.
+
+| Clip | Frames | Camera mix | Mean inliers | Foreground before vote | Final foreground (max) | Regions/frame | Frames with no foreground | ME ms/frame | Seg ms/frame | Wall (whole clip) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| video1 | 518 | homography 517 | 0.774 | 3.72% | 3.12% (18.7%) | 3.65 | 11 | 37 | 2.4 | 21 s |
+| video2 | 383 | homography 381, translation 1 | 0.737 | 9.25% | 7.71% (24.7%) | 8.13 | 0 | 37 | 3.2 | 16 s |
+| Stairs | 346 | homography 345 | 0.904 | 1.62% | 1.59% (5.9%) | 1.23 | 66 | 209 | 16.6 | 82 s |
+| SAL | 437 | homography 436 | 0.853 | 2.36% | 1.85% (4.6%) | 3.66 | 0 | 208 | 15.4 | 102 s |
+
+Reading: the vote removes 16 to 22% of foreground on video1, video2 and SAL (one-frame flicker), and almost nothing on Stairs, whose regions are already stable. Stairs' empty frames are 1 to 71 (the distant walker, P1.6 known limit) plus 4 short gaps. Speed: SAL motion + segmentation for the whole clip is 102 s in the sandbox, against the 3-minute target on the Mac. Images `docs/img/p18_*.jpg` (final labels): SAL walker in all three frames with smaller brick patches; video2 joggers only partly found, fence and trees still false; that is the main target for P1.9.
+
+### P1.9 tuning, step 1 [A/P1] (sandbox; all 4 clips together, never per clip)
+Sweep tool (scratch, not in repo): full pipeline incl. vote on the frames around 20/50/80% of each clip, one setting changed at a time from the P1.8 defaults, then combinations. Mean final foreground % over the three frames (lower is better only if the people stay, so every shortlisted setting was checked by eye on whole-clip runs).
+
+| Setting | video1 | video2 | Stairs | SAL | Verdict |
+|---|---|---|---|---|---|
+| P1.8 defaults | 1.78 | 6.79 | 1.61 | 2.01 | baseline |
+| resPx 2.0 / 3.0 | 2.01 / 1.68 | 8.11 / 6.10 | 1.61 / 1.61 | 2.02 / 2.00 | little effect |
+| spread cap 2.5 / 4 | 1.72 / 7.00 | 6.44 / 10.84 | 1.41 / 1.81 | 1.93 / 2.28 | 4 explodes; 3 kept |
+| min region 8 blocks | 1.51 | 4.15 | 1.61 | 2.01 | 480p clips only |
+| min region 0.4% | 1.51 | 4.78 | 1.42 | 1.53 | trims walkers on 1080p |
+| camera slack 2 levels/px | 1.55 | 5.81 | 1.60 | 1.25 | best single change |
+| candidate texture 50 | 3.08 | 8.03 | 1.18 | 1.83 | worse on 480p |
+| A: slack 2 + min 8 blocks | 1.38 | 3.27 | 1.60 | 1.25 | REJECTED by eye |
+
+Eye check, whole clips: A erased both joggers on video2 f306 and most of them on f191 while the false fence region survived, and lost the skateboarder on video1 (frames with no foreground: video1 11 -> 132). Slack 2 alone kept the people and removed false regions, so it is adopted: `SegConfig.camSlackMad` 1.0 -> 2.0.
+
+Whole clips after step 1 (`docs/img/p19_step1_*.jpg`):
+
+| Clip | Final foreground P1.8 -> step 1 | Max | Regions/frame | Frames with no foreground |
+|---|---|---|---|---|
+| video1 | 3.12% -> 2.70% | 17.5% | 2.99 | 11 -> 16 |
+| video2 | 7.71% -> 6.95% | 22.8% | 7.53 | 0 -> 1 |
+| Stairs | 1.59% -> 1.51% | 5.9% | 1.21 | 66 -> 79 (new: 14 to 16 and 47 to 64, the distant-walker stretch; 221, 232, 233) |
+| SAL | 1.85% -> 1.07% | 2.9% | 1.76 | 0 -> 11 (frames 409 to 427, walker at the right edge) |
+
+Reading: SAL now shows the walker in all three frames and one brick patch (f218) instead of five; video2's false fence region shrank and both joggers are found at f306. 120 to 190 more empty frames would have been the price of option A.
+
+## P4 extra credit (Window C)
+
+### P4-B zigzag + run-length (.cmp mode 1), sizes (Nov 14, sandbox: sizes do not depend on the machine)
+`CmpRecode` rewrites a baseline file as mode 1 with the same quantized coefficients (fake checkerboard labels, half the blocks foreground).
+
+| File | Frames | Raw payload per frame (baseline -> mode 1) | File size (zlib), baseline -> mode 1 | Smaller by |
+|---|---|---|---|---|
+| video2 (2,5) | 120 | 2.45 -> 0.93 MB | 44.8 -> 37.8 MB | 1.18x |
+| SAL (2,5) | 60 | 12.57 -> 4.68 MB | 116.1 -> 94.0 MB | 1.23x |
+
+- Pixel identity on real data: frames 0, middle and last of both files decode identically from baseline and mode 1 (sandbox check).
+- Run-length alone shrinks the raw payload 2.7x, but zlib already removed much of the zero padding in the baseline, so the stored gain is 1.18x to 1.23x. With real labels (5 to 12% foreground) the gain should be larger: re-measure after wire-up.
+- Decode fps baseline vs mode 1: PENDING on a quiet Mac (`./mydecoder out/p3/SAL_2_5.cmp --bench --workers 4` and the same for `SAL_2_5_rle.cmp`).
+
+### Quiet run (Nov 14, 13:43 to 14:00, `out/p3/quiet_run.sh`, log `out/p3/quiet_run.txt`; on battery power, no build window working)
+Warm-up run (not counted): SAL_2_5 0 dropped, 0 late, +0.62%.
+
+P3.4b, SAL 200 frames (2,5), fair order 4/6/6/4, traces out/p3/q_trace_*.csv:
+
+| Run | Workers | Dropped | Late (whole clip) | Late in 100..199 | Played vs clip | Lateness of all frames: median / p95 / max | GC pauses (max) |
+|---|---|---|---|---|---|---|---|
+| 4a | 4 | 3 (1.5%) | 71 (35.5%) | 59 | +0.08% | 8.1 / 32.9 / 120.3 ms | 47 (5.7 ms) |
+| 6a | 6 | 0 | 13 (6.5%) | 0 | +0.16% | 12.2 / 27.2 / 50.6 ms | 73 (2.4 ms) |
+| 6b | 6 | 0 | 2 (1.0%) | 0 | +0.22% | 4.8 / 14.6 / 31.6 ms | 25 (2.1 ms) |
+| 4b | 4 | 0 | 7 (3.5%) | 0 | +0.06% | 5.3 / 16.0 / 31.7 ms | 7 (3.3 ms) |
+
+P3.7, full-length SAL (437 frames), 4 workers (default):
+
+| File | Bench | Dropped | Late | Played vs clip | First 100 frames | Last 100 frames |
+|---|---|---|---|---|---|---|
+| SAL full (2,5), 781 MB | 58.9 fps (1.96x real time) | 0 | 2 (0.5%) | 14.58 vs 14.57 s (+0.07%) | 0 late, 29.9 fps | 1 late, 30.0 fps |
+| SAL full (0,0), 1.8 GB | 46.1 fps (1.54x real time) | 0 | 34 (7.8%) | 14.58 vs 14.57 s (+0.09%) | 3 late, 29.9 fps | 8 late, 30.0 fps |
+
+P4-B, SAL (2,5) 60 frames, same coefficients:
+
+| File | Serial 1 core | Pipeline 4 workers | Play |
+|---|---|---|---|
+| baseline (mode 0) | 52.3 ms/frame | 16.4 ms = 61.0 fps | (warm-up run) 0 dropped, 0 late |
+| mode 1 (zigzag + run-length) | 45.6 ms/frame | 13.1 ms = 76.2 fps | 0 dropped, 10 late (16.7%, max 26.9 ms), +0.34% |
+
+Side by side with the original (P3.4c): SAL_2_5 + SAL.mp4: 0 dropped, 2 late (3.3%), 30.0 fps, +0.15%. Step back 35 frames: both halves updated on every press; no noticeable pause (Dhruvin answered "y" to the pause prompt by mistake and corrected it in chat).
+
+Encode stage (CodecHarness, compression only, fake labels): SAL full (2,5) 67.0 ms/frame = 29 s for 437 frames; (0,0) 124.9 ms/frame = 55 s. Thermal: no thermal or performance warning recorded. Disk 22 GB free before, 17 GB after.
+
+What the numbers say
+- Full-length playback (P3.7): 0 drops at both settings, on time within 0.09% over 14.6 s, and the last 100 frames run as well as the first 100 (29.9 vs 30.0 fps). No thermal slowdown on the fanless Air over a full clip, even at the worst setting (0,0).
+- P3.4b target (whole clip under 2% late at (2,5)): MET on the full-length clip (0.5%) and in run 6b (1.0%); not met in the short-clip runs 4a (35.5%), 6a (6.5%), 4b (3.5%). All late frames are mild (median lateness 5 to 12 ms over all frames, no drops) and cluster in the first counted run, the same first-run effect seen since Nov 12. GC pauses are at most 5.7 ms, so -Xms1g would not help: not applied.
+- 4 vs 6 workers stays 4: both reach 0 drops; the differences between runs are larger than between worker counts.
+- P4-B mode 1 decodes FASTER than the baseline: 76.2 vs 61.0 fps (+25%) and 45.6 vs 52.3 ms on one core (-13%), because there is less data to inflate and parse. With the 1.18x to 1.23x size gain, mode 1 is smaller and faster with identical pictures.
+- E4 evidence so far: compression stage 29 to 55 s per full SAL clip, decode faster than real time; segmentation time and real files come with wire-up.
+- Trace caveat: the per-frame traces of the two full-length runs are not usable (the clip was replayed with space before q, which restarts the clock; the trace is written at exit). The printed reports are taken at the end of the first pass and are valid. Fix queued: trace records the first pass only (P3 parcel).
+
+### P1.9 step 2: parallax filter experiment [A/P1] (sandbox; built, OFF by default, DECISION REQUEST)
+Finding (video2 f191, residual dump): the false fence region has a steady residual (-7, 0) pointing the same way as the camera's own vector (-11, -1); near background under a moving camera slides further the same way. The joggers' residuals are mixed (arms and legs) and mostly against the flow, so the consistency rule breaks them up while the fence stays one coherent region.
+Filter (`SegConfig.parallaxDeg`, `parallaxMinCam`): drop a region whose median residual points within N degrees of the camera vector at its centroid, when that vector is >= 4 px.
+
+Sweep, mean final foreground % on the sweep frames:
+
+| Setting | video1 | video2 | Stairs | SAL |
+|---|---|---|---|---|
+| Step 1 defaults (filter off) | 1.55 | 5.81 | 1.60 | 1.25 |
+| Filter 30 degrees | 1.55 | 2.33 | 1.60 | 0.91 |
+| Filter 45 degrees | 1.55 | 2.26 | 1.60 | 0.91 |
+
+Whole clips with the filter at 30 degrees: video2 final foreground 6.95% -> 4.15% (frames with none 1 -> 8); video1 2.70% -> 2.24% (frames with none 16 -> 51). Eye check: video2 tree and fence regions gone, joggers unchanged (`docs/img/p19_parallax_on_video2.jpg`); video1 mostly loses false crosswalk-stripe regions, but on f9 also part of a real pedestrian (`docs/img/p19_parallax_video1_f9_50_131_off.jpg` vs `_on.jpg`). Two existing unit tests fail with it on, both exactly the risk: a real mover whose residual runs along the camera's flow (anything moving against the camera's direction) is deleted.
+Status: code and 4 tests committed, default OFF (labels unchanged). It conflicts with the adopted principle in 03 D3 ("lean foreground when unsure"), so it waits for a DECISION REQUEST (WORKLOG).
+
+### P1.10 final labels and determinism [A/P1] (sandbox; final settings, parallax filter OFF)
+`VizSeg <clip> --stats --labels --sheet docs/img/p1_final_<clip>.jpg`: the labels file holds one byte per macroblock for every frame of the clip (B10).
+
+| Clip | Frames labelled | Grid | Final foreground (max) | Frames with no foreground | Labels SHA-256 (first 16) |
+|---|---|---|---|---|---|
+| video1 | 518 | 30 x 53 | 2.70% (17.5%) | 16 | af10a59e22e6684d |
+| video2 | 383 | 30 x 53 | 6.95% (22.8%) | 1 | f568f6ac25924709 |
+| Stairs | 346 | 120 x 68 | 1.51% (5.9%) | 79 | 0ce96f5a6a177ef7 |
+| SAL | 437 | 120 x 68 | 1.07% (2.9%) | 11 | 7f203b4c6ce044a7 |
+
+Determinism: video2 run twice in separate JVMs, both `f568f6ac259247095f3790e652337f0478701d7cb0b250e6854a03236de5a6f5`, files byte-identical (`cmp`).
+Parallax slide pair (same frames, filter off vs on at 30 degrees): `docs/img/p1_parallax_video2_off.jpg`, `docs/img/p1_parallax_video2_on.jpg` (whole clip 6.95% vs 4.15%).
+
+## Wire-up (Window A)
+
+### W2 real encodes, all 4 clips at (n1, n2) = (2, 5) [A/W2] (sandbox, 4 cores; Mac times come from `./myencoder` on a quiet Mac)
+`java -cp <classes> codec.encoder.EncoderMain data/<clip>.mp4 2 5` (the same program `./myencoder` launches). Labels from the final P1 settings (parallax off). PSNR from `Psnr <mp4> <cmp>`, which also decodes every frame (decodability check).
+
+| Clip | Frames | Input mp4 | .cmp (zlib) | Foreground 8x8 blocks | Segmentation ms/frame | Compression ms/frame | Encode wall | PSNR all / fg / bg (dB, mean) |
+|---|---|---|---|---|---|---|---|---|
+| video1 | 518 | 3.6 MB | 65.9 MB | 2.70% | 39 | 14 | 28.7 s | 37.73 / 47.98 / 37.62 |
+| video2 | 383 | 2.7 MB | 86.7 MB | 6.94% | 40 | 20 | 23.6 s | 34.29 / 47.78 / 33.99 |
+| Stairs | 346 | 21.9 MB | 294.6 MB | 1.50% | 205 | 82 | 101.6 s | 35.30 / 48.12 / 35.24 |
+| SAL | 437 | 27.8 MB | 431.0 MB | 1.07% | 205 | 87 | 130.8 s | 34.38 / 47.53 / 34.34 |
+
+C1 check (scratch tool, reads each .cmp and the matching labels file): every 8x8 block_type equals the label of its 16x16 macroblock, 0 mismatches over 34.1 million blocks; frame counts match.
+Reading: the layer effect holds on real labels: foreground 13 to 14 dB above background on every clip (D5 evidence; the swapped (5,2) check comes with P3.R). The .cmp is 15 to 32 times the mp4 because baseline has no prediction between frames and no entropy coding beyond zlib (03 D7). E4: SAL encode 131 s in the sandbox; the Mac run plus decode decides E4.
+
+### W3 accumulated residual for slow movers [A/W3] (sandbox; whole clips; NOT kept)
+Idea: add up each block's residual along its own motion track, A_t = r_t + d * A_{t-1} (previous value read where the block came from), d = 0.6, so a steady 2 px/frame mover builds to about 5 px while noise grows only about 1.25 times. Separate slow-mover pass for blocks below resPx with |A| > accPx, same grouping rules, merged into the main labels. Patch: `tools/experiments/w3_accumulated_residual.patch`.
+
+| Variant | video2 mean fg (P1 final 6.95%) | Stairs empty frames (P1 final 79 of 346) | Stairs f69 | SAL mean fg (P1 final 1.07%) |
+|---|---|---|---|---|
+| accPx 4, exact camera test | 8.89% | 73 | 0.00% | not run |
+| accPx 5, exact camera test | 7.64% | not run | not run | 1.07% (unchanged) |
+| accPx 5, no camera test | 8.06% | 78 | 0.00% | not run |
+| accPx 4, no camera test | 9.76% | not run | not run | not run |
+
+Diagnosis (Stairs f69, walker rectangle 13 x 26 blocks): accumulation works where his vectors carry his motion (A = 6 to 8 px against about 1 px around him), but only 267 of 338 blocks are eligible, the camera test still explains most of the dark, flat ones (slack 2 grey levels per pixel), and the 32 remaining candidates are scattered, so no region reaches the size minimum. Root cause is upstream: on small, flat objects the motion search's smoothness penalty gives blocks their neighbours' (camera's) vector, so most of the walker never carries his motion.
+Decision: not kept (fails the rule "keep only if video2 and SAL false foreground do not rise"; no gain on the target frames). Code reverted; P1 labels unchanged. Decision log P1-L21.
+
+### W2 / D13 Mac numbers [A] (Nov 14, Dhruvin's MacBook Air, quiet Mac, JDK 21, FFmpeg 7.1)
+
+| Check | Mac result | Target | Pass |
+|---|---|---|---|
+| `time ./myencoder data/SAL.mp4 2 5` | 1:51 wall (segmentation 203 ms/frame, compression 43 ms/frame), 424.7 MB | E4: encode + decode under 10 min | yes |
+| `./mydecoder data/SAL.cmp data/SAL.mp4` | 437 frames, 0 dropped, 19 late (4.3%; 16 of them in frames 0 to 99, warm-up), duration error +0.02% | real time | yes |
+| `./mydecoder data/video1.cmp ...` | 0 dropped, 0 late, +0.09% | real time | yes |
+| `./mydecoder data/video2.cmp ...` | 0 dropped, 1 late, +0.06% | real time | yes |
+| `./mydecoder data/Stairs.cmp ...` | two runs, both ended early ("not measured"): 3 dropped, 45 late (13.0%) on the second | real time | open, handed to Window C (P3.R) |
+| `VizSeg data/SAL.mp4 --range 16 --me-check` | hier 190 ms/frame, full 386 ms/frame, agreement 89.9%, worse-by-10% 3.9% | <= 200 ms per 1080p frame | yes |
+| `VizSeg data/video2.mp4 --range 32 --me-check` | hier 37 ms/frame, full 227, agreement 95.9%, worse 1.6% | | yes |
+| `time VizSeg data/SAL.mp4 --stats --labels` | 90.7 s wall (ME 186, seg 12.8 ms/frame) | SAL motion + segmentation <= 3 min | yes |
+
+Cross-machine labels: Mac SAL labels SHA-256 `22a4eeb79ee922d2...`, sandbox `7f203b4c6ce044a7...`; 0.11% of blocks differ (3,871 of 3.57 M). Cause: the two FFmpeg builds decode different pixels. The first 3 decoded SAL frames as rgb24 hash to `e94e45f4187e485e` on the Mac (FFmpeg 7.1) and `19a8c69638e71fbe` in the sandbox (FFmpeg 4.4). Same machine, same input: identical labels (video2, two runs). The .cmp size also differs (424.7 vs 431.0 MB) for the same reason plus zlib builds. The Mac is the authority (00 section 2): reference SAL labels hash `22a4eeb7...`.
+
+## P3.R decoder on real myencoder files (Window C)
+
+### D5 swap with real labels (Nov 14, sandbox; PSNR does not depend on the machine)
+video2 encoded at (5,2) by `EncoderMain` (same program as ./myencoder) into out/p3r/ so the (2,5) file in data/ stays; PSNR from `Psnr <mp4> <cmp>`.
+
+| video2, real labels (6.9% foreground blocks) | Size | PSNR all / foreground / background (dB, mean) |
+|---|---|---|
+| (2,5), RESULTS W2 | 86.7 MB | 34.29 / **47.78** / 33.99 |
+| (5,2), new | 209.0 MB | 44.54 / 34.41 / **48.05** |
+
+The cleaner layer swaps with n1 and n2: foreground 13.8 dB above background at (2,5), 13.6 dB below at (5,2). The (5,2) file is 2.4x bigger because 93% of the blocks are background and now get the fine step. Images (decoder's own Display.View, frame 190): `docs/img/p3r_video2_n2_5_side_1to1.png`, `p3r_video2_n5_2_side_1to1.png` (1:1 side by side, panned to the foreground), `p3r_video2_n2_5_overlay.png` (plain | real-label overlay), `p3r_video2_swap_crop_x3.png` (original | (2,5) | (5,2), 128x128 crop at 3x, foreground blocks outlined). On video2 the visual difference is subtle because the source is soft; SAL's brick wall at (5,2) is encoded on the Mac in the P3.R quiet run for a clearer slide.
+
+### E4 encode + decode under 10 minutes
+Mac (RESULTS "W2 / D13 Mac numbers"): SAL, the largest clip (1080p, 437 frames), encodes in 1:51 wall and plays in real time (14.58 s for 14.57 s, quiet run P3.7), so encode + decode is about 2 minutes 6 s, under the 10-minute limit. The other clips are smaller (Stairs 346 frames at 1080p; video1, video2 at 480x848).
+
+### Stairs "ended early" (Window A's Mac check)
+Sandbox: the real data/Stairs.cmp has 346 frames in its header (same as the mp4) and all 346 decode without error (bench 65.6 fps, sandbox). "Not measured" in the report means the run was paused, stepped or quit before the last frame; the decoder itself is fine. The untouched Mac playback is in the P3.R quiet run (`out/p3r/quiet_run_p3r.sh`).
+
+### C1 label check method [A] (one-off check behind RESULTS "W2"; tool committed as tools/checks/C1Check.java)
+What it checks: for every frame of a real .cmp, each 8x8 block_type equals the foreground/background state of its 16x16 macroblock in the labels file written by the same pipeline. Inputs: `data/<clip>.cmp` from `EncoderMain` at (2,5) and `out/viz/final/<clip>.labels` from `VizSeg --stats --labels` with the same settings and the same machine (sandbox). Method: `CmpFormat.Reader.readFrame` gives the block types; `LabelsIO.Reader.read` gives the labels; block (x, y) is compared with macroblock (x / 2, y / 2); frame counts must match.
+Run (any machine, after `./gradlew -q jar`, with both files made on that machine):
+```
+mkdir -p out/c1 && javac -cp build/libs/layer-codec.jar -d out/c1 tools/checks/C1Check.java
+java -cp build/libs/layer-codec.jar:out/c1 diag.C1Check data/SAL.cmp out/viz/final/SAL.labels
+```
+Result (sandbox, Nov 14): video1 3,294,480 blocks, video2 2,435,880, Stairs 11,293,440, SAL 14,263,680; 0 mismatches in all (34.1 M blocks); foreground share 2.70%, 6.94%, 1.50%, 1.07%.
+
+### P3.R quiet-Mac run (Nov 15, Mac, `out/p3r/quiet_run_p3r.sh`, log out/p3r/quiet_run_p3r.txt) [C/P3.R]
+On battery (charger not connected); no thermal or performance warning recorded (`pmset -g therm`). Real ./myencoder files, all at (2,5), 4 workers.
+
+| Clip | Serial ms/frame (1 core) | Pipeline fps (4 workers) | x real time | Untouched playback: dropped / late | Duration error |
+|---|---|---|---|---|---|
+| video1 480x848, 518 fr | 7.2 | 463.3 | 15.4x | 0 / 1 (0.2%) | +0.03% |
+| video2 480x848, 383 fr | 8.8 | 407.6 | 13.6x | 1 (0.3%) / 2 (0.5%) | +0.11% |
+| Stairs 1080p, 346 fr | 40.4 | 82.9 | 2.8x | **0 / 5 (1.4%)** | +0.09% |
+| SAL 1080p, 437 fr | 42.4 | 81.0 | 2.7x | 0 / 7 in first 100 | not measured (quit before the end) |
+| SAL + original side by side | | | | 1 (0.2%) / 9 (2.1%) | +0.08% |
+
+- Stairs "ended early" is closed: untouched, it played all 346 frames, 0 dropped, within 0.09% of the clip length. The earlier early endings were runs quit or stepped before the last frame (the report says "not measured" then); the file and decoder were fine (sandbox: all 346 decode).
+- SAL in step 2 was quit before its last frame (the first 100 frames were clean); the full-length SAL run with the original (step 3) and the Nov 14 quiet run (0 dropped, +0.09%) cover it.
+- **D5 on SAL, real labels, Mac:** (2,5) fg 47.53 / bg 34.34 dB (RESULTS W2) vs (5,2) fg **34.40** / bg **47.72** dB (this run; all 46.87): foreground 13.2 dB above background, then 13.3 dB below. (5,2) file 1142.8 MB vs 431.0 MB, because 99% of SAL's blocks are background and get the fine step. Images: `docs/img/p3r_SAL_swap_crop_x3.png` (frame 200, original | (2,5) | (5,2), 160x160 at 3x: face sharp and bricks soft at (2,5), bricks sharp and jacket blockier at (5,2)), `p3r_SAL_orig_1to1.png`, `p3r_SAL_n2_5_1to1.png`, `p3r_SAL_n5_2_1to1.png` (480x270 at 1:1 from (820, 270)).
+- **E4, Mac:** SAL (5,2) encode 130 s wall (segmentation 200 ms/frame, compression 85 ms/frame), the worst case (largest file); decode plays in real time (14.58 s for 14.57 s). Encode + decode about 2 min 25 s, under 10 minutes. (2,5): 1:51 encode (W2) + 14.6 s.
+- **Side by side key `s`:** Dhruvin reports it does not split on the Mac. Fixed in P3-D16 (see that entry); Mac recheck queued.
+
+## P4-A motion-compensated residuals (mode 2), first measurements (Nov 15, sandbox; sizes and PSNR do not depend on the machine) [C/P4]
+Tool: `McEncode <mp4> n1 n2 [out] [--frames N]` (4b377b4), same labels and block types as ./myencoder; PSNR mean over frames, all / fg / bg dB.
+
+Whole clips at (2,5), GOP 8 (as approved):
+
+| Clip | Baseline (W2) | Mode 2, GOP 8 | Size change | PSNR change (all / fg / bg) |
+|---|---|---|---|---|
+| video1, 518 fr | 65.9 MB, 37.73 / 47.98 / 37.62 | 32.0 MB, 36.44 / 47.20 / 36.33 | -51% | -1.3 / -0.8 / -1.3 |
+| video2, 383 fr | 86.7 MB, 34.29 / 47.78 / 33.99 | 58.5 MB, 33.12 / 47.06 / 32.82 | -33% | -1.2 / -0.7 / -1.2 |
+
+Quality falls inside each group (video2, first 96 frames, PSNR by position, 0 = I frame): 34.34, 33.89, 33.40, 33.11, 32.79, 32.62, 32.43, 32.36. The I frame equals baseline (34.34 vs 34.28). Cause: with step 2^n, any residual change smaller than half a step is rounded to zero, so small changes are never sent and the error grows until the next I frame (it stays bounded; the encoder predicts from the reconstructed frame, so encoder and decoder never disagree).
+
+Group length sweep, first 96 frames at (2,5) (experiment: GOP constant changed in a scratch copy, nothing committed):
+
+| GOP | video2 size | video2 PSNR all / fg / bg | video1 size | video1 PSNR all / fg / bg |
+|---|---|---|---|---|
+| baseline | 20.2 MB | 34.28 | 10.8 MB | 38.23 |
+| 2 | 13.2 MB (-35%) | **34.24** / 47.46 / 33.97 | 5.2 MB (-52%) | **37.96** / 47.67 / 37.88 |
+| 3 | 13.0 MB (-36%) | 33.99 / 47.33 / 33.72 | 5.0 MB (-54%) | 37.74 / 47.50 / 37.66 |
+| 4 | 13.4 MB (-34%) | 33.75 / 47.23 / 33.48 | 5.0 MB (-54%) | 37.48 / 47.39 / 37.40 |
+| 6 | 13.7 MB (-32%) | 33.39 / 47.11 / 33.11 | | |
+| 8 (approved) | 14.2 MB (-30%) | 33.12 / 47.04 / 32.84 | 5.1 MB (-53%) | 36.81 / 47.15 / 36.73 |
+
+Reading: longer groups are not smaller here; the growing error makes late P frames cost more. GOP 2 keeps baseline quality (-0.04 dB on video2, -0.27 dB on video1) at 35 to 52% smaller. Also tried (not recommended): P frames one step finer (n-1): video2 24.0 MB, 37.04 dB, i.e. bigger than baseline and changes what n1, n2 mean. DECISION REQUEST P4-A GOP in WORKLOG.
+
+## P4 final: baseline vs mode 1 vs mode 2, all 4 clips at (2,5) (Nov 15, sandbox) [C/P4]
+Same machine, same labels for all three modes (sandbox FFmpeg; the Mac decodes slightly different pixels, so Mac-made labels differ by 0.11% of blocks, RESULTS W2). Baseline: `EncoderMain` (= ./myencoder) into out/p4/<clip>_base.cmp (sizes and PSNR equal RESULTS W2); mode 1: `CmpRecode` of that file (same coefficients, lossless, so PSNR is identical); mode 2: `McEncode` (GOP 2, P4-L3). PSNR mean over frames, all / foreground / background. Decode fps: `mydecoder --bench --workers 4`, sandbox (4 cores, nice'd); Mac numbers are higher (P3.R quiet run: SAL baseline 81 fps on the Mac vs 62 here).
+
+| Clip (frames) | Baseline (mode 0) | Zigzag + RLE (mode 1) | Motion-compensated, GOP 2 (mode 2) |
+|---|---|---|---|
+| video1 (518) | 65.9 MB, 37.73 / 47.98 / 37.62 dB, 357 fps | 39.2 MB (-41%), same pixels, 529 fps | **32.9 MB (-50%)**, 37.50 / 47.75 / 37.39 dB, 447 fps |
+| video2 (383) | 86.7 MB, 34.29 / 47.78 / 33.99 dB, 339 fps | 61.6 MB (-29%), same pixels, 381 fps | **55.1 MB (-36%)**, 34.07 / 47.55 / 33.76 dB, 310 fps |
+| Stairs (346, 1080p) | 294.6 MB, 35.30 / 48.12 / 35.24 dB, 67.6 fps | 195.9 MB (-34%), same pixels, 88.1 fps | **152.6 MB (-48%)**, 35.11 / 47.83 / 35.04 dB, 72.9 fps |
+| SAL (437, 1080p) | 431.0 MB, 34.38 / 47.53 / 34.34 dB, 62.2 fps | 272.7 MB (-37%), same pixels, 72.2 fps | **210.4 MB (-51%)**, 34.24 / 47.32 / 34.20 dB, 65.4 fps |
+
+Reading: mode 2 halves the file on three of four clips at baseline quality (within 0.23 dB on every clip and layer); mode 1 gives a third to two fifths with identical pixels; all three decode faster than real time even in the sandbox. Mode 2 encode wall (sandbox, 3-thread McEncode): video1 22 s, video2 18 s, Stairs 79 s, SAL 100 s (baseline encoder: 28, 24, 102, 134 s). P frames are 0.45 to 0.64 of an I frame. Playback of mode 2 with plain `./mydecoder` (GopPipeline, Xvfb virtual screen, 2 workers): video2 383/383, 0 dropped, +0.03%; SAL_mc 1080p 437/437, 0 dropped, 11 late (2.5%), +0.02%. Mac quiet playback in the final check.
+
+## Final Mac check (Nov 15, commit 88fc181, `bash tools/final_check.sh`, log out/final/final_check.txt) [C]
+On battery, no thermal or performance warning. `./gradlew build`: 234 tests, all passed (golden baseline included). Labels made on the Mac (FFmpeg 7.1), so sizes differ slightly from the sandbox table; every mode uses the same Mac labels.
+
+| Clip | Baseline: size, PSNR all/fg/bg, encode, decode fps | Mode 1 (`--mode rle`) | Mode 2 (McEncode, GOP 2) |
+|---|---|---|---|
+| video1 | 65.0 MB, 37.72 / 48.01 / 37.62, 25 s, 323 fps | 38.7 MB (-40%), 25 s, 548 fps | 32.4 MB (-50%), 37.49 / 47.77 / 37.39, 21 s, 448 fps |
+| video2 | 85.4 MB, 34.30 / 47.79 / 33.98, 19 s, 395 fps | 60.9 MB (-29%), 19 s, 495 fps | 54.5 MB (-36%), 34.08 / 47.56 / 33.75, 16 s, 408 fps |
+| Stairs | 291.0 MB, 35.30 / 48.13 / 35.24, 85 s, 81.5 fps | 193.9 MB (-33%), 86 s, 105.1 fps | 151.1 MB (-48%), 35.11 / 47.84 / 35.04, 75 s, 87.9 fps |
+| SAL | 424.7 MB, 34.38 / 47.52 / 34.34, 115 s, 77.2 fps | 269.0 MB (-37%), 113 s, 95.0 fps | 207.3 MB (-51%), 34.24 / 47.31 / 34.20, 112 s, 78.9 fps |
+
+- Playback, all 12 files with plain ./mydecoder: **0 dropped in every run**, durations within 0.10%. Mode 2 on 1080p: Stairs 0 late, SAL 0 late. (Stairs baseline 10 late while view keys were pressed during play.)
+- Swap check SAL (5,2): fg 34.40 / bg 47.72 dB (vs (2,5) 47.52 / 34.34), 1142.8 MB, encode 130 s; played with the original, 0 dropped, 26 late (5.9%, original read alongside, on battery).
+- E4: worst encode 130 s plus real-time decode; every clip and mode well under 10 minutes.
+- Mac and sandbox agree on every size change within 1 point and every PSNR within 0.02 dB of the same-label comparison (RESULTS "P4 final").
+
+## Mac re-measure (Nov 16) [L0, PM ruling Nov 16]
+P1.10 and the slides used sandbox labels (FFmpeg 4.4). These are the same final labels made on the Mac (FFmpeg 7.1). The P1.10 numbers above stay as they were; Mac numbers are the reference for the report and slides. Code unchanged (freeze-code 88fc181).
+
+| Clip | Frames analysed | Final foreground, whole clip (Mac) | P1.10 (sandbox) | Frames with no foreground (Mac / sandbox) | Naive, whole clip, same vectors (Mac) |
+|---|---|---|---|---|---|
+| SAL | 436 | 1.07% | 1.07% | 10 / 11 | 8.68% |
+| video2 | 382 | 7.25% | 6.95% | not recorded / 1 | 16.56% |
+| video1 | 517 | 2.66% | 2.70% | 19 / 16 | not run |
+| Stairs | 345 | 1.57% | 1.51% | 74 / 79 | not run |
+
+- Frames analysed excludes frame 0, which copies frame 1 (03 D4), the same convention as `VizSeg --stats`.
+- Sources: SAL, video1, Stairs from `VizSeg --stats` on the Mac, `out/mac/{SAL,video1,Stairs}_seg.csv` (means recomputed from the CSVs). video2 and both naive figures from the lab viz tool `lab.viz.Compare` on the Mac (`lab/LAB_LOG.md` [viz] Nov 16), which checks every label against a real `Segmenter.Run` and found 0 differences; SAL labels also match `out/mac/SAL.labels` exactly. video2 7.25% was also reproduced with FFmpeg 6.1.
+- Naive here uses the same seeded vectors and camera model as the final labels, so only the segmentation rules differ. The 3-frame naive numbers in "P1.5 naive baseline overlays" used an unseeded search in the sandbox.
+- Why the machines differ: the sandbox FFmpeg 4.4 decodes the mp4 slightly differently from FFmpeg 6.1 and 7.1 (which agree on video2), so a few borderline blocks change label. SAL is identical on every machine.
+
+Uneven bits (lab rd tool, Mac Nov 16, `lab/rd/RESULTS_L3.md`; its in-memory coder equals "Final Mac check" byte for byte on video2 (2,5): 85.4 / 60.9 / 54.5 MB):
+- video2, n1 fixed at 2: foreground stays at 47.7 dB while the file drops from 93.9 to 13.7 MB as n2 rises.
+- (2,6) vs (4,4): the subject gets 9.2 dB more for 41% fewer bytes.
+- SAL at a 100 Mbps budget: same foreground in every mode; background 23.2 dB in baseline vs 30.1 dB in mode 2.
+- Images: `docs/img/rd_video2_even_vs_uneven.png` (lead slide for "uneven bits"), `docs/img/rd_video2_fixed_n1.png`, `docs/img/sizes_4clips.png`, `docs/img/dct_SAL_f150.png` (DCT energy, walker vs wall).

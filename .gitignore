@@ -1,0 +1,14 @@
+# Test clips and generated output never go in git (00 rules section 2)
+data/
+out/
+build/
+build-tools/
+.gradle/
+.kotlin/
+
+# OS and IDE noise
+.DS_Store
+.idea/
+*.iml
+.vscode/
+local.properties

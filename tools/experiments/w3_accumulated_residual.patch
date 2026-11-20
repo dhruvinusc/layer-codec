@@ -1,0 +1,160 @@
+diff --git a/src/main/java/codec/encoder/Segmenter.java b/src/main/java/codec/encoder/Segmenter.java
+index f98e8f2..04cd928 100644
+--- a/src/main/java/codec/encoder/Segmenter.java
++++ b/src/main/java/codec/encoder/Segmenter.java
+@@ -48,12 +48,16 @@ public final class Segmenter {
+      * @param parallaxMinCam ... when that camera vector is at least this long: near background under a
+      *                       moving camera slides further the same way (parallax), people tracked by the
+      *                       camera move against the flow
++     * @param accDecay       W3: decay of the accumulated residual along each block's motion track
++     *                       (0 = off). A steady mover's residual builds up to r / (1 - d) ...
++     * @param accPx          ... and a block below resPx whose accumulated residual exceeds this joins
++     *                       a separate slow-mover pass (exact camera test, same grouping rules)
+      */
+     public record SegConfig(int minTextureVar, int maxMatchMad, int candMinVar, double camSlackMad, double camSlackRel, int camWindow, double resPx, double consPx,
+                             double consMinMag, double consAngleDeg, int minRegionBlocks,
+                             double minRegionFrac, double maxSpreadPx, boolean dilate,
+-                            double parallaxDeg, double parallaxMinCam) {
+-        public static final SegConfig DEFAULT = new SegConfig(100, 12, 20, 2.0, 0.15, 1, 2.5, 2.0, 4.0, 30.0, 4, 0.002, 3.0, false, 0.0, 4.0);
++                            double parallaxDeg, double parallaxMinCam, double accDecay, double accPx) {
++        public static final SegConfig DEFAULT = new SegConfig(100, 12, 20, 2.0, 0.15, 1, 2.5, 2.0, 4.0, 30.0, 4, 0.002, 3.0, false, 0.0, 4.0, 0.0, 4.0);
+     }
+ 
+     /**
+@@ -509,6 +513,74 @@ public final class Segmenter {
+         }
+     }
+ 
++    /**
++     * W3: accumulated residual along each block's motion track: A_t(i) = r_t(i) + d * A_{t-1}(j),
++     * where j is the block that i came from (its centre moved by its own vector). A steady mover's
++     * residual builds up towards r / (1 - d); random noise grows only by 1 / sqrt(1 - d^2).
++     */
++    static float[][] accumulate(float[][] r, float[][] prev, MotionField mv, double d) {
++        int n = r[0].length;
++        float[] ax = new float[n];
++        float[] ay = new float[n];
++        int cols = mv.cols();
++        int rows = mv.rows();
++        for (int i = 0; i < n; i++) {
++            ax[i] = r[0][i];
++            ay[i] = r[1][i];
++            if (prev != null) {
++                int cx = i % cols;
++                int cy = i / cols;
++                int x = Math.floorDiv(cx * Types.MB + Types.MB / 2 + mv.dx()[i], Types.MB);
++                int y = Math.floorDiv(cy * Types.MB + Types.MB / 2 + mv.dy()[i], Types.MB);
++                int j = Math.min(rows - 1, Math.max(0, y)) * cols + Math.min(cols - 1, Math.max(0, x));
++                ax[i] += (float) (d * prev[0][j]);
++                ay[i] += (float) (d * prev[1][j]);
++            }
++        }
++        return new float[][] {ax, ay};
++    }
++
++    /**
++     * W3 slow-mover pass: blocks the main pass did not consider (residual at most resPx) whose
++     * accumulated residual exceeds accPx, that are eligible and that the camera's exact vector does not
++     * explain, grouped with the same consistency, size and spread rules on the accumulated field.
++     */
++    static Labels slowMovers(int[] cur, int[] prev, int w, int h, MotionEstimator.Result me, GlobalMotion.Model cam,
++                             float[][] r, float[][] acc, SegConfig c) {
++        SegConfig exact = new SegConfig(c.minTextureVar(), c.maxMatchMad(), c.candMinVar(), c.camSlackMad(),
++                c.camSlackRel(), 0, c.resPx(), c.consPx(), c.consMinMag(), c.consAngleDeg(), c.minRegionBlocks(),
++                c.minRegionFrac(), c.maxSpreadPx(), c.dilate(), c.parallaxDeg(), c.parallaxMinCam(), c.accDecay(), c.accPx());
++        boolean[] e = eligible(cur, w, h, me, c);
++        boolean[] x = cameraExplains(cur, prev, w, h, me, cam, exact);
++        int cols = me.field().cols();
++        int rows = me.field().rows();
++        boolean[] cand = new boolean[e.length];
++        double r2 = c.resPx() * c.resPx();
++        double a2 = c.accPx() * c.accPx();
++        for (int i = 0; i < cand.length; i++) {
++            double rm = (double) r[0][i] * r[0][i] + (double) r[1][i] * r[1][i];
++            double am = (double) acc[0][i] * acc[0][i] + (double) acc[1][i] * acc[1][i];
++            cand[i] = e[i] && (SLOW_SKIP_CAMERA_TEST || !x[i]) && rm <= r2 && am > a2;
++        }
++        byte[] id = new byte[cand.length];
++        int minSize = Math.max(c.minRegionBlocks(), (int) Math.ceil(c.minRegionFrac() * cand.length));
++        grow(cand, acc[0], acc[1], cols, rows, c, minSize, id);
++        return new Labels(cols, rows, id);
++    }
++
++    static boolean SLOW_SKIP_CAMERA_TEST = Boolean.getBoolean("w3.skipcam");
++
++    /** Main-pass labels win; slow-mover regions fill only background blocks, with ids from 128 up. */
++    static Labels union(Labels main, Labels slow) {
++        byte[] out = main.id().clone();
++        for (int i = 0; i < out.length; i++) {
++            if (out[i] == 0 && slow.id()[i] != 0) {
++                out[i] = (byte) Math.min(255, 127 + (slow.id()[i] & 0xFF));
++            }
++        }
++        return new Labels(main.cols(), main.rows(), out);
++    }
++
+     /**
+      * Per-frame facts for the stats CSV (frame 0 copies frame 1, 03 D4).
+      *
+@@ -544,6 +616,7 @@ public final class Segmenter {
+         private int[] prevY;
+         private MotionField prevField;
+         private int[] hint = {0, 0};
++        private float[][] acc;      // W3 accumulated residual of the previous frame, or null
+         private int t = -1;
+ 
+         public Run(int w, int h, SegConfig sc, GlobalMotion.GmConfig gc, MotionEstimator.HierParams hp) {
+@@ -564,7 +637,13 @@ public final class Segmenter {
+                 long t1 = System.nanoTime();
+                 boolean[] rel = reliable(y, w, h, me, sc);
+                 GlobalMotion.Model cam = GlobalMotion.fit(me.field(), rel, w, h, gc);
+-                Labels raw = fill(group(me.field(), foregroundEligible(y, prevY, w, h, me, cam, sc), cam, sc), sc);
++                Labels base = group(me.field(), foregroundEligible(y, prevY, w, h, me, cam, sc), cam, sc);
++                if (sc.accDecay() > 0) {
++                    float[][] r = residuals(me.field(), cam);
++                    acc = accumulate(r, acc, me.field(), sc.accDecay());
++                    base = union(base, slowMovers(y, prevY, w, h, me, cam, r, acc, sc));
++                }
++                Labels raw = fill(base, sc);
+                 Labels fin = temporal.push(raw, me.field());
+                 long t2 = System.nanoTime();
+                 pending.add(new double[] {t, cam.kind().ordinal(), cam.inlierRatio(), 100.0 * count(rel) / rel.length,
+diff --git a/src/main/java/codec/tools/VizSeg.java b/src/main/java/codec/tools/VizSeg.java
+index 796e481..6fc1efd 100644
+--- a/src/main/java/codec/tools/VizSeg.java
++++ b/src/main/java/codec/tools/VizSeg.java
+@@ -311,7 +311,7 @@ public final class VizSeg {
+         }
+         return new Segmenter.SegConfig(d.minTextureVar(), d.maxMatchMad(), d.candMinVar(), d.camSlackMad(), d.camSlackRel(),
+                 d.camWindow(), d.resPx(), d.consPx(), d.consMinMag(), d.consAngleDeg(), d.minRegionBlocks(),
+-                d.minRegionFrac(), d.maxSpreadPx(), d.dilate(), parallaxDeg, d.parallaxMinCam());
++                d.minRegionFrac(), d.maxSpreadPx(), d.dilate(), parallaxDeg, d.parallaxMinCam(), d.accDecay(), d.accPx());
+     }
+ 
+     /** Renders kept frames whose final labels are now available; returns the new emitted count. */
+diff --git a/src/test/java/codec/encoder/SegmenterFillTest.java b/src/test/java/codec/encoder/SegmenterFillTest.java
+index 9e02511..9a05c2c 100644
+--- a/src/test/java/codec/encoder/SegmenterFillTest.java
++++ b/src/test/java/codec/encoder/SegmenterFillTest.java
+@@ -114,7 +114,7 @@ class SegmenterFillTest {
+         SegConfig d = SegConfig.DEFAULT;
+         SegConfig dil = new SegConfig(d.minTextureVar(), d.maxMatchMad(), d.candMinVar(), d.camSlackMad(), d.camSlackRel(),
+                 d.camWindow(), d.resPx(), d.consPx(), d.consMinMag(), d.consAngleDeg(), d.minRegionBlocks(),
+-                d.minRegionFrac(), d.maxSpreadPx(), true, d.parallaxDeg(), d.parallaxMinCam());
++                d.minRegionFrac(), d.maxSpreadPx(), true, d.parallaxDeg(), d.parallaxMinCam(), d.accDecay(), d.accPx());
+         Labels in = grid(
+                 "00000",
+                 "01020",
+diff --git a/src/test/java/codec/encoder/SegmenterParallaxTest.java b/src/test/java/codec/encoder/SegmenterParallaxTest.java
+index 3a0586b..0caba69 100644
+--- a/src/test/java/codec/encoder/SegmenterParallaxTest.java
++++ b/src/test/java/codec/encoder/SegmenterParallaxTest.java
+@@ -21,7 +21,7 @@ class SegmenterParallaxTest {
+         SegConfig d = SegConfig.DEFAULT;
+         return new SegConfig(d.minTextureVar(), d.maxMatchMad(), d.candMinVar(), d.camSlackMad(), d.camSlackRel(),
+                 d.camWindow(), d.resPx(), d.consPx(), d.consMinMag(), d.consAngleDeg(), d.minRegionBlocks(),
+-                d.minRegionFrac(), d.maxSpreadPx(), d.dilate(), deg, minCam);
++                d.minRegionFrac(), d.maxSpreadPx(), d.dilate(), deg, minCam, d.accDecay(), d.accPx());
+     }
+ 
+     /** Camera vector (-10, 0) everywhere; one 4x4 patch at (5,5) with residual (rx, 0). */

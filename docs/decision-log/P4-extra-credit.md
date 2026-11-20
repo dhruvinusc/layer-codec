@@ -1,0 +1,116 @@
+# P4 Extra credit: decision log
+
+Owner: proposed by Window C (Nov 14). Status: P4-L1 was a DECISION REQUEST (Nov 14); PM approved option B the same day. Option A waits for the Nov 22 checkpoint.
+
+### P4-L1: Motion-compensated residual coding and zigzag + run-length (DECISION REQUEST)
+- Date / window: Nov 14, Window C (proposal only)
+- Brief says: Extra credit, only after everything else works: "motion-compensated prediction: encode the residual plus one motion vector per macroblock" (F1) and "a better coefficient scan order (zigzag) to help compression" (F2). The baseline without zigzag, intermediate representation or entropy coding is acceptable (C6). Extra credit must sit behind a flag and leave the default output byte-identical (00 section 3).
+- The problem in plain words: Our baseline codes every frame from scratch, so the .cmp is 3x to 9.6x smaller than raw but still larger than the mp4 (P2-L7). Most of a frame is almost the same as the previous one, moved a little by the camera. Coding only the difference after that move, and storing zeros cheaply, should make files several times smaller without changing what the layers mean.
+- Options we considered:
+  1. A: full extra credit (F1 + F2): residual coding with one motion vector per 16x16 macroblock, predicted from the RECONSTRUCTED previous frame, an I frame (coded from scratch) every N frames, then zigzag + run-length : good the largest size gain, covers both extra-credit items / bad most code, breaks the decoder's frame-parallel speed trick (see risks), about 3.5 days
+  2. B: only F2: zigzag + run-length on today's baseline blocks, as a new mode : good small, safe, every frame still independent so the P3 player keeps working unchanged / bad modest gain, covers one item only, about 1 day
+  3. C: no extra credit : good all time goes to P1 quality, report and rehearsal / bad leaves possible marks unused
+- What we chose: PM decision Nov 14: B APPROVED (zigzag + run-length, .cmp mode 1). A is decided at the Nov 22 checkpoint, only if P1 and wire-up are done. Requirements set by PM: a golden SHA test proves the baseline output byte-identical; mode-1 files play with the same mydecoder command line; size and decode fps measured against the baseline. Answers to the four questions (proposal defaults, PM said use them unless they conflict): (1) B yes; (2) A conditional on Nov 22; (3) Window C builds P4, with the one change B needs in the closed CmpFormat (accept mode 1) and the matching edit of its "unknown mode" test (mode 2 is now the first unknown one); the myencoder option waits for wire-up in Window A's EncoderMain (PARCEL); (4) N = 8 if A is approved.
+- Why (plain words): B is cheap, low risk and measurable in a day, and its run-length coder is reused by A anyway. A carries real risk to real-time playback, and P1 is the critical path with thin margin (due Nov 16), so A should only start once the required parts are safe.
+- Proof: none yet (design). Measurements planned below.
+- Cost or limitation: see Risks and Effort below.
+- Say it in the presentation: "Our extra credit codes only what changes: each block is predicted from where it was in the previous decoded frame, and the small leftover is scanned low to high frequency so the zeros collapse into a few bytes."
+- Likely professor question: Why predict from the reconstructed frame, not the original? / Answer: The decoder only has its own reconstructed frames. If the encoder predicted from the originals, every frame's small error would be built on by the next and grow over time (drift). Predicting from the same reconstruction the decoder has keeps both in step.
+
+#### Design details (for PM review)
+
+1. Switching it on, and keeping the baseline byte-identical
+   - CLI: `myencoder input.mp4 n1 n2 [--mode ec]`, off by default (00 section 3). Option B would be `--mode rle`.
+   - File: the mode bits already reserved in the .cmp flags (03 D7, bits 1 to 3): 0 = baseline (today), 1 = run-length only (B), 2 = motion-compensated (A). The 48-byte header and the footer stay exactly the same; the reader already rejects unknown modes.
+   - Byte-identical baseline: the mode 0 writer path is not edited; new code lives in new classes and is reached only when mode is not 0. A golden test pins today's baseline output: the SHA-256 of a fixed CodecHarness run (for example SAL first 60 frames at (2,5), sha `1da794c0...` from P3.0) must not change, plus the existing CmpFormatTest round trips.
+2. Per-frame payload for mode 2 (A), after the frame's existing length prefix
+   - 1 byte frame type: 0 = I frame, 1 = P frame (predicted).
+   - P frame only: one motion vector per 16x16 macroblock, 2 signed bytes (dx, dy), scan line order. Range +/-127 covers video2's +/-32. 1080p: 120 x 68 = 8,160 macroblocks = 16 KB per frame before zlib (vectors are highly repetitive under a camera pan, so zlib shrinks them a lot).
+   - Then, per 8x8 block in scan line order: block_type (unchanged meaning, picks n1 or n2), then for R, G, B the quantized RESIDUAL coefficients (I frame: the coefficients themselves) in zigzag order, run-length coded (below).
+   - The whole payload is still zlib-wrapped per frame as today, so random access by footer offset still works.
+3. Prediction
+   - Motion vectors: reuse Window A's per-macroblock vectors (Y plane, previous ORIGINAL frame, D12 sign convention). No new search.
+   - Reference: the encoder keeps its own decoded copy of the previous frame (it runs the decoder's dequantize + inverse DCT), and predicts block (x, y) from (x + dx, y + dy) in that copy, for R, G and B. Residual = current minus prediction, then the same 8x8 DCT and 2^n quantization by layer as the baseline.
+   - I frame every N frames (N stored per frame by the frame type, so the decoder needs no extra header field). Proposed N = 8 (reason under Risks), and frame 0 is always an I frame.
+4. Zigzag + run-length (mode 1 and mode 2)
+   - Zigzag: the standard JPEG order of the 64 coefficients, low to high frequency, so after quantization the zeros sit together at the end.
+   - Run-length per 8x8 channel block: pairs (number of zeros before the next nonzero value: 1 byte, value: 2 bytes), ended by an end-of-block marker (0xFF). An all-zero block costs 1 byte instead of 128.
+   - zlib stays on top (lossless, already measured cheap).
+5. Expected gains (ESTIMATES, to be measured, not promises)
+   - B alone: zlib already squeezes out much of the repeated zeros, so the extra gain is likely modest: an estimated 1.2x to 1.5x smaller than today's zlib baseline (today SAL (2,5) = 1.79 MB per frame).
+   - A: on these pans most background blocks are well predicted, so at n2 = 5 most residual blocks quantize to all zeros. Rough estimate for N = 8: P frames 3x to 5x smaller than I frames, giving about 2.5x to 3.5x smaller files than the baseline overall. Worst on video2 (fast tracking shot, parallax) and on uncovered background.
+   - Quality: at the same n1 and n2, per-layer PSNR should stay within about 1 dB of the baseline, since the same quantizer applies to the residual and predicting from the reconstruction prevents drift. The layer effect (foreground cleaner when n1 < n2) is kept, because block_type still chooses the quantizer per block.
+   - Measured and reported as a table per clip: MB per frame, ratio vs baseline, PSNR all / foreground / background, encode and decode ms per frame (RESULTS "P4").
+6. Risks
+   - Real-time playback (biggest): P frames depend on the previous frame, so the P3 trick of decoding several whole frames at once (P3-D1) no longer works inside a run of P frames. Mitigation: decode whole groups (an I frame plus its P frames) in parallel, one group per worker, keeping frames packed. With N = 8 and 4 workers that is at most 32 packed frames in flight (about 270 MB at 1080p). A larger N compresses better but needs more memory or loses parallelism, hence N = 8. Residual blocks are mostly zero, so the zero-skip inverse DCT also gets faster.
+   - Step back: going back inside a group needs the group's I frame and the P frames up to the target: at most N - 1 = 7 extra decodes; the 30-frame cache still covers recent frames.
+   - Drift bugs: an encoder whose reconstruction differs from the decoder's by even one rounding step drifts. Mitigation: the encoder calls the same DecodeCore functions, and a test compares encoder-side and decoder-side reconstructions bit for bit over 60 frames.
+   - Dependencies: needs P1 labels and wire-up first (A also needs P1's vectors). Touches closed P2 files (CmpFormat reader dispatch, FrameEncoder) and Window A's EncoderMain (the flag): each change needs its own small DECISION REQUEST, or PM assigns those files to the P4 window.
+   - Schedule: P1 is due Nov 16 with thin margin and P5 freezes Nov 27 (02 slip policy: P4 shrinks first).
+   - Explainability: Dhruvin must be able to explain drift, groups of pictures and run-length at the whiteboard; budget Tutor time.
+7. Effort estimate (one window, sandbox for code and tests, Mac for timing)
+   - B: format mode 1, zigzag table, run-length writer and reader, tests, sizes table: 1 day.
+   - A on top of B: frame types and vector payload 0.5 day; encoder prediction with reconstruction + drift test 1 day; decoder + group-parallel pipeline + player integration 1 day; Mac measurements and report table 0.5 day; decision log and Tutor notes 0.5 day: about 3.5 days.
+   - Total A + B: about 4.5 days inside the Nov 19 to 26 window, with a go/no-go checkpoint for A on Nov 22.
+
+#### Questions for PM (the decision request)
+1. Approve B (mode 1, zigzag + run-length) for Nov 19 to 20? 
+2. Approve A conditionally, with a go/no-go on Nov 22, or not at all?
+3. Which window builds P4 (Window C, or a new P4 window), and may it change CmpFormat (reader dispatch for modes 1 and 2), FrameEncoder and EncoderMain's flag parsing?
+4. Accept N = 8 for the I-frame interval (memory and parallel decode), or prefer a larger N for size?
+
+### P4-L2: Zigzag + run-length built as .cmp mode 1 (option B)
+- Date / window: Nov 14, Window C
+- Brief says: "A better coefficient scan order (zigzag) to help compression" (F2). Extra credit behind a flag, baseline output unchanged (00 section 3).
+- The problem in plain words: After quantization most coefficients are zero, but the baseline stores all 64 of them per channel (2 bytes each). zlib squeezes some of that out, but it does not know the zeros cluster at high frequencies.
+- Options we considered:
+  1. Zigzag only, keep 2 bytes per coefficient : good trivial / bad zlib alone gains little from the reorder
+  2. Zigzag + run-length (run of zeros, value) with an end-of-block marker, then zlib as before : good all-zero channels cost 1 byte, lossless, every frame still independent / bad a new decoder path
+  3. Full entropy coding (Huffman tables like JPEG) : good smaller still / bad much more code, harder to explain, little gain over zlib on top of run-length
+- What we chose: Option 2. Pairs of (1 byte zeros before the value, 2 byte value), 0xFF ends each channel, same block order and block_type byte as the baseline, mode 1 in the header flags. Decoding unpacks into the same arrays the baseline uses, so dequantize and inverse DCT are shared and the pixels are identical. A tool, CmpRecode, turns any baseline file into mode 1 with the same coefficients (myencoder gets its option at wire-up).
+- Why (plain words): It is the simplest coder that exploits the zigzag order, it keeps frames independent so the P3 player and its parallel decoding work unchanged, and the run-length code is reused if option A is approved.
+- Proof: GoldenBaselineTest (baseline payload and file SHA-256 unchanged; values pinned on 78da695 before any P4 code); RunLengthTest (JPEG zigzag order, lossless round trip at 0 to 100% density including -32768 and 32767, all-zero channel = 1 byte, corrupt input errors); FrameDecodeTest (mode-1 file gives pixel-identical frames to baseline through the decode pipeline; bench plays mode 1 with the same command line); CmpRecodeTest. Full suite 207/207 (sandbox). Real files (RESULTS "P4-B"): video2 (2,5) 44.8 to 37.8 MB (1.18x smaller), SAL (2,5) 116.1 to 94.0 MB (1.23x); frames 0, middle and last pixel-identical to the baseline.
+- Cost or limitation: The gain on these test files is modest (1.18x to 1.23x), at the low end of the 1.2x to 1.5x estimate, because zlib already removed much of the zero padding. The test files mark half the blocks foreground (fake checkerboard), which keeps many nonzero coefficients; real labels (5 to 12% foreground) should do better, to be measured after wire-up. Decode speed on the Mac not measured yet (quiet Mac).
+- Say it in the presentation: "Our extra credit scans each block from low to high frequency and stores only the nonzero values with the count of zeros before them; on our test files that made the files about 20% smaller with identical pictures."
+- Likely professor question: Why so little gain if most coefficients are zero? / Answer: zlib was already compressing those runs of zero bytes in the baseline. Run-length still helps because zigzag puts the zeros together, and the gain grows when fewer blocks are foreground, as with real segmentation.
+
+### P4-L3: How long a group (I frame every how many frames) - DECIDED (PM, Nov 15: GOP 2)
+- Date / window: Nov 15, Window C
+- Brief says: Extra credit for better compression; n1 and n2 are the quantization exponents for foreground and background.
+- The problem in plain words: The approved design starts a fresh (I) frame every 8 frames. Measured on real clips, each predicted frame is a little worse than the one before, because changes smaller than half a quantization step are rounded away and never sent. At GOP 8 the file is 33 to 51% smaller but about 1.2 dB worse on average than baseline at the same n1, n2.
+- Options we considered:
+  1. Keep GOP 8 : good as approved / bad 1.2 to 1.3 dB worse than baseline, and the file is not even the smallest
+  2. GOP 2 (every other frame predicted) : good same quality as baseline (within 0.3 dB) and 35 to 52% smaller; decoder groups are tiny, so parallel decode and stepping back are easy / bad half the frames are still I frames
+  3. GOP 3 or 4 : good smallest files / bad 0.3 to 0.8 dB worse than baseline
+  4. Finer step on predicted frames (n-1) : good much better quality / bad bigger than baseline and changes what n1, n2 mean
+- What we chose: Option 2, GOP 2 (PM decision Nov 15). Whole clips afterwards: 36 to 51% smaller than baseline, within 0.23 dB on every clip and layer (RESULTS "P4 final").
+- Why (plain words): A fair comparison holds quality fixed. GOP 2 is the only setting that gives the same picture quality as baseline while still cutting the file by a third to a half, so the claim "smaller at the same quality" is honest.
+- Proof: RESULTS "P4-A" sweep, first 96 frames of video1 and video2, GOP 2, 3, 4, 6, 8.
+- Cost or limitation: One constant (McCodec.GOP) used by both encoder and decoder; old mode-2 files would not decode after a change (none are kept or shipped).
+- Say it in the presentation: "Predicting every other frame from the one before cuts the file by a third to a half with no visible quality loss."
+- Likely professor question: Why not predict longer runs? / Answer: We measured it. With 2^n quantization, small changes are rounded away, so the error grows along the run and later frames cost more to fix. Short groups were both smaller and cleaner.
+
+GOP sweep behind the choice (first 96 frames at (2,5), RESULTS "P4-A"):
+
+| GOP | video2 size | video2 PSNR all | video1 size | video1 PSNR all |
+|---|---|---|---|---|
+| baseline | 20.2 MB | 34.28 | 10.8 MB | 38.23 |
+| 2 (chosen) | 13.2 MB | 34.24 | 5.2 MB | 37.96 |
+| 3 | 13.0 MB | 33.99 | 5.0 MB | 37.74 |
+| 4 | 13.4 MB | 33.75 | 5.0 MB | 37.48 |
+| 8 | 14.2 MB | 33.12 | 5.1 MB | 36.81 |
+
+### P4-L4: Encoding mode 2 on three threads
+- Date / window: Nov 15, Window C
+- Brief says: Encode plus decode within 10 minutes (E4).
+- The problem in plain words: The mode-2 encoder did everything on one thread: the segmenter, a second motion search for the prediction, and the coding. SAL took about 3.5 minutes in the sandbox, too long for comfortable testing and close to the encoder's E4 share.
+- Options we considered:
+  1. Leave it : good no risk / bad slow
+  2. Reuse the segmenter's motion field instead of searching twice : good least work / bad needs a hook in Window A's Segmenter (parcel), not possible before freeze
+  3. Three fixed stages on three threads (segmenter, motion search, coding), each stage in frame order, plus no search on I frames : good 2x faster with byte-identical output / bad a little more code
+- What we chose: Option 3.
+- Why (plain words): Each stage keeps its own order, so the file is exactly the same as the single-thread version; only the waiting overlaps.
+- Proof: video2 file byte-identical to the single-thread run (cmp); McEncodeTest (two runs give the same SHA-256); 234/234. SAL 100 s, Stairs 79 s (sandbox).
+- Cost or limitation: Up to 6 frames waiting for the coding thread (about 150 MB at 1080p).
+- Say it in the presentation: "The motion-compensated encoder runs its three stages side by side and still writes exactly the same file."
+- Likely professor question: Doesn't threading make the output random? / Answer: No. Each stage is one thread working through frames in order; threads only hand finished frames to the next stage.
