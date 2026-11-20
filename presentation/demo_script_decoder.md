@@ -31,7 +31,7 @@ Numbers: full SAL clip plays in 14.58 s against 14.57 s, 0 dropped frames (RESUL
 
 ## Step 2. Side by side at n1 = 2, n2 = 5 (about 80 s)
 ```
-./mydecoder out/p3/SAL_2_5.cmp data/SAL.mp4
+./mydecoder data/SAL.cmp data/SAL.mp4
 ```
 1. Let it play a second, press space to pause on a frame where the walker is clear.
 2. Press s: decoded on the left, original on the right.
@@ -48,7 +48,7 @@ Press q.
 
 ## Step 3. Swap the layers: n1 = 5, n2 = 2 (about 40 s)
 ```
-./mydecoder out/p3/SAL_5_2.cmp data/SAL.mp4      (real: encode with 5 2)
+./mydecoder data/SAL.cmp data/SAL.mp4      (real: encode with 5 2)
 ```
 Pause on the same moment, press s, z, d, drag to the same spot.
 Say: "Same frame, layers swapped: now the foreground is the blocky one and the background is clean.
