@@ -178,7 +178,7 @@ The miss: a car driving straight at me. It does not slide, it grows, so its squa
 Two frames side by side, each with the moving squares tinted:
 - Left, "Found": the scooter rider while the camera pans.
 - Right, "Missed": the head-on car, mostly untinted.
-One line underneath: "5 phone clips, same code, same settings: 0 frames dropped."
+Under them, a 5-row table: clip, frames, .cmp size at (2,5), dropped frames (0 for all five). One line: "5 phone clips, same code, same settings: 0 frames dropped."
 
 **WHY THE PICTURES LOOK THAT WAY**
 - Scooter: the camera's motion is removed first, so the background goes quiet and the rider's leftover motion stands out and points one way.
@@ -198,14 +198,14 @@ Test beyond the clips I tuned on, without retuning, so the result says something
 ## Slide 8. Does the uneven split actually pay? (0:45 / 9:15)
 
 **SAY**
-"After the code was finished I tested the question directly: for the same file size, is it better to split unevenly or evenly? The blue line is the even split. Both parts get the same step, so to make the file smaller the walker has to get worse too. The green line keeps the walker's step fixed and only makes the background rougher **[J50]**. The walker stays sharp while the file shrinks."
+"After the code was finished I tested the question directly: for the same file size, is it better to split unevenly or evenly? The grey line is the even split. Both parts get the same step, so to make the file smaller the walker has to get worse too. The orange line keeps the walker's step fixed and only makes the background rougher **[J50]**. The walker stays sharp while the file shrinks."
 
 **ON THE SLIDE**
 `docs/img/rd_video2_even_vs_uneven.png`, but only the first of its three panels (the other two show the same shape).
 One line: "Uneven: walker much sharper, file 41% smaller."
 
 **WHY THE CHART LOOKS THAT WAY**
-The green line is flat because the walker's step never changes, so its quality never changes. Moving left along it, only the background gets rougher, so the file gets smaller. The blue line drops because with an even split, a smaller file means a worse walker too.
+The orange line is flat because the walker's step never changes, so its quality never changes. Moving left along it, only the background gets rougher, so the file gets smaller. The grey line drops because with an even split, a smaller file means a worse walker too.
 
 **WHY WE CHOSE IT**
 For streaming: keep the walker's step fixed, then pick the roughest background that still fits the internet speed you have. All lab tests run on the finished code without changing it.
@@ -247,6 +247,10 @@ Three short lines with a small picture each:
 - *Parallax:* close things move across the picture faster than far things when the camera moves. Hold a finger up and move your head: the finger jumps, the wall behind barely moves. One flat camera model cannot capture both at once.
 - *About a fifth, exactly:* 74 of 346 Stairs frames.
 - *The failed idea:* use the camera model alone to predict the whole background, instead of one arrow per square. It worked on SAL, where the wall is flat, and was worse on the other three clips, which have depth. I set the pass bar before measuring, it failed, so I stopped.
+
+---
+
+**BACKUP SLIDE AFTER THIS ONE (hidden):** `lab/viz/E1_backup_slide.png`, the parallax filter off vs on with the Mac table (video2 7.26% to 4.29%, no effect on SAL or Stairs). Show it only if he asks about the fence or the filter.
 
 ---
 
