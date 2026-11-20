@@ -12,19 +12,20 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Entry point for {@code mydecoder input_video.cmp} (brief, part 3).
+ * Entry point for {@code mydecoder input_video.cmp}.
  *
- * <p>The optional second argument (the original mp4) enables side-by-side comparison
- * (03 D8). It is off by default so the spec command line is unchanged.
+ * <p>A plain run plays the file: frames are decoded ahead on worker threads, the last 30 shown
+ * frames are kept for stepping back, a steady clock holds the original frame rate (a frame that
+ * arrives too late is dropped rather than slowing playback), a status line is drawn on screen,
+ * and a timing summary is printed when the player closes.
  *
- * <p>Hidden timing mode (P3, off by default so the spec command line is unchanged):
- * {@code mydecoder input.cmp --bench [--workers 1,2,6]} decodes every frame headless, first
- * serially on one core, then through {@link DecodePipeline}, and prints ms/frame and fps.
+ * <p>The optional second argument, the original mp4, enables side-by-side comparison. Without it
+ * the command line is exactly the brief's.
  *
- * <p>A plain run plays the file (P3.3): decode-ahead pipeline, 30-frame step-back cache, steady
- * clock with frame dropping, status line on screen, timing report on stdout. Hidden option
- * {@code --workers N} overrides the decode worker count (4 vs 6 comparison, P3-L5), and hidden
- * {@code --trace file.csv} writes per-frame timing for diagnosis.
+ * <p>Options for measuring, not needed to play: {@code mydecoder input.cmp --bench [--workers 1,2,6]}
+ * decodes every frame without a window, first on one core and then through
+ * {@link DecodePipeline}, and prints ms per frame and fps. {@code --workers N} sets the number of
+ * decode threads, and {@code --trace file.csv} writes per-frame timing for diagnosis.
  */
 public final class DecoderMain {
 
@@ -52,13 +53,13 @@ public final class DecoderMain {
 
     public static void main(String[] argv) {
         // Pipeline threads are joined and the window disposed by the time run() returns; exit so
-        // no AWT thread lingers (P3 acceptance: nothing left running after q).
+        // no AWT thread lingers after q.
         System.exit(run(argv, System.err));
     }
 
     /**
      * The whole command line, returning the exit code instead of exiting, so every error path is
-     * testable (P3.6): 0 played or benched; 2 bad command line (usage printed); 1 the file or the
+     * testable: 0 played or benched; 2 bad command line (usage printed); 1 the file or the
      * machine is the problem (not a .cmp, wrong version, unfinished file, truncated or corrupt,
      * original is a different video, no screen). Errors are one clear line on {@code err}.
      */

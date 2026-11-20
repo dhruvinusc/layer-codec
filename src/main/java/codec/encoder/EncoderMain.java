@@ -18,15 +18,16 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Entry point for {@code myencoder input_video.mp4 n1 n2} (brief, part 1).
+ * Entry point for {@code myencoder input_video.mp4 n1 n2}.
  *
- * <p>Pipeline (wire-up W1, docs/p1_report.md): read upright frames, pad to 16, segment from motion
- * ({@link Segmenter.Run}, labels one frame behind), then for each labelled frame 8x8 DCT on R, G, B,
- * quantize with 2^n1 (foreground) or 2^n2 (background), and write the .cmp ({@link FrameEncoder},
- * {@link CmpFormat.Writer}, zlib on). Frames and labels are both FIFO, so they stay matched.
+ * <p>Pipeline: read upright frames, pad them to a multiple of 16, label them from motion
+ * ({@link Segmenter.Run}, which hands labels back one frame late), then for each labelled frame
+ * run the 8x8 DCT on R, G and B, quantize with 2^n1 (foreground) or 2^n2 (background), and write
+ * the .cmp ({@link FrameEncoder}, {@link CmpFormat.Writer}, zlib on). Frames and labels both come
+ * out in the order they went in, so they stay matched.
  *
- * <p>Optional, off by default: {@code --mode rle} writes mode 1 (zigzag + run-length, P4-B) instead
- * of the baseline layout. The spec command line {@code myencoder input_video.mp4 n1 n2} is unchanged.
+ * <p>Optional, off by default: {@code --mode rle} writes mode 1 (zigzag + run-length) instead of
+ * the baseline layout. The brief's command line {@code myencoder input_video.mp4 n1 n2} is unchanged.
  */
 public final class EncoderMain {
 
@@ -130,7 +131,8 @@ public final class EncoderMain {
         for (Labels l : ready) {
             byte[] payload = FrameEncoder.encodeParallel(baselineOf(h), waiting.poll(), l, pool, 2 * cores);
             if (h.mode() == CmpFormat.MODE_RLE) {
-                // P4-B: same coefficients, re-laid out as zigzag + run-length (as CmpRecode does).
+                // Mode 1: same coefficients, re-laid out in zigzag order with run-length coding,
+                // exactly as CmpRecode does it.
                 byte[] types = new byte[h.blockCount()];
                 short[] coef = new short[h.blockCount() * CmpFormat.COEF_PER_BLOCK];
                 CmpFormat.decodeBaseline(baselineOf(h), payload, types, coef);
@@ -184,7 +186,7 @@ public final class EncoderMain {
         return n;
     }
 
-    /** {@code dir/input_video.mp4} becomes {@code dir/input_video.cmp} (brief: same base name). */
+    /** {@code dir/input_video.mp4} becomes {@code dir/input_video.cmp} (same base name, as the brief asks). */
     static Path cmpPathFor(Path input) {
         String file = input.getFileName().toString();
         int dot = file.lastIndexOf('.');

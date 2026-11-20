@@ -5,11 +5,13 @@ import codec.common.Types.Labels;
 import codec.common.Types.MotionField;
 
 /**
- * Foreground/background labelling from motion only (03 D3). Built up step by step in P1:
- * reliability (P1.4) first; camera motion, residuals, grouping, cleaning and temporal voting follow.
+ * Foreground/background labelling from motion only. The stages, in order: decide which block
+ * vectors can be trusted, fit the camera's motion, subtract it to get each block's own motion
+ * (the residual), group blocks that move together, clean up the groups, and vote over three
+ * frames so labels do not flicker.
  *
- * <p>All thresholds live in {@link SegConfig} (one record, tuned on all 4 clips together in P1.9).
- * The frozen {@code codec.common.Config} is not touched (P1-D5).
+ * <p>All thresholds live in {@link SegConfig}, one record, tuned on all four clips together
+ * rather than per clip. The shared {@code codec.common.Config} is left alone.
  */
 public final class Segmenter {
 
@@ -42,8 +44,8 @@ public final class Segmenter {
      * @param minRegionFrac  ... and at least this share of all macroblocks (0.002 = 16 blocks at 1080p)
      * @param maxSpreadPx    a region whose residuals spread more than this (median distance from the
      *                       region's median residual) is noise, not one moving object
-     * @param dilate         P1.7: grow every region by one block (4-neighbours) after filling
-     * @param parallaxDeg    P1.9: drop a region whose median residual points within this angle of the
+     * @param dilate         grow every region by one block (4-neighbours) after filling
+     * @param parallaxDeg    drop a region whose median residual points within this angle of the
      *                       camera's own vector at the region (0 = off) ...
      * @param parallaxMinCam ... when that camera vector is at least this long: near background under a
      *                       moving camera slides further the same way (parallax), people tracked by the
@@ -57,7 +59,7 @@ public final class Segmenter {
     }
 
     /**
-     * P1.4: true where a block's vector can be trusted. Unreliable blocks are not evidence for or
+     * True where a block's vector can be trusted. Unreliable blocks are not evidence for or
      * against motion; later steps give them their neighbours' label.
      */
     public static boolean[] reliable(int[] y, int w, int h, MotionEstimator.Result me, SegConfig c) {
@@ -73,7 +75,7 @@ public final class Segmenter {
         return ok;
     }
 
-    /** Naive baseline (05, P0-D5): a textured block is foreground if its residual exceeds this. */
+    /** Naive baseline: a textured block is foreground if its residual exceeds this. */
     public static final double NAIVE_RESIDUAL_PX = 3.0;
     /** Naive baseline: connected groups smaller than this many macroblocks are dropped. */
     public static final int NAIVE_MIN_BLOCKS = 4;
@@ -96,7 +98,7 @@ public final class Segmenter {
     }
 
     /**
-     * The naive baseline P1 must beat: one frame only, a textured block whose residual is larger than
+     * The simple method the real segmentation is compared against: one frame only, a textured block whose residual is larger than
      * {@link #NAIVE_RESIDUAL_PX} is a candidate, and 4-connected groups of at least
      * {@link #NAIVE_MIN_BLOCKS} candidates become foreground. No match-quality gate, no direction
      * consistency, no cleaning, no temporal vote.
@@ -116,7 +118,7 @@ public final class Segmenter {
     }
 
     /**
-     * P1.6: blocks allowed to be foreground candidates: a good match (MAD within maxMatchMad) and at
+     * Blocks allowed to be foreground candidates: a good match (MAD within maxMatchMad) and at
      * least candMinVar texture. Looser than {@link #reliable}, which feeds the camera fit, because a
      * moving person often wears flat clothing; the direction-consistency rule filters the extra noise.
      */
@@ -132,7 +134,7 @@ public final class Segmenter {
     }
 
     /**
-     * P1.6: true where the camera's own motion explains the block almost as well as the block's best
+     * True where the camera's own motion explains the block almost as well as the block's best
      * vector. On a repeating brick wall the search can lock onto a whole patch of wrong but mutually
      * consistent vectors; the camera's vector matches those blocks about as well, so they are
      * background. A walker's blocks match badly at the camera's vector, so they stay candidates.
@@ -168,7 +170,7 @@ public final class Segmenter {
         return out;
     }
 
-    /** P1.6 candidates' gate: eligible (texture, match) and not explained by the camera. */
+    /** Candidate gate: eligible (texture, match) and not explained by the camera. */
     public static boolean[] foregroundEligible(int[] cur, int[] prev, int w, int h, MotionEstimator.Result me,
                                                GlobalMotion.Model cam, SegConfig c) {
         boolean[] e = eligible(cur, w, h, me, c);
@@ -180,8 +182,8 @@ public final class Segmenter {
     }
 
     /**
-     * P1.6: the brief's rule (B7). Candidates are eligible blocks (see {@link #eligible}) with a
-     * residual longer than
+     * The brief's rule: foreground regions must be contiguous and move in a consistent direction.
+     * Candidates are eligible blocks (see {@link #eligible}) with a residual longer than
      * {@code resPx}. A region grows from a candidate to its 4-neighbours, but a neighbour joins only
      * if its residual agrees with the block it is reached from (close in length and direction). So a
      * patch of brick-alias vectors, large but pointing every which way, falls apart into tiny pieces
@@ -200,6 +202,7 @@ public final class Segmenter {
         }
         byte[] id = new byte[n];
         int minSize = Math.max(c.minRegionBlocks(), (int) Math.ceil(c.minRegionFrac() * n));
+        // Small specks are noise: a region must reach a fixed block count and a share of the frame.
         grow(cand, r[0], r[1], cols, rows, c, minSize, id);
         if (c.parallaxDeg() > 0) {
             dropParallax(id, r[0], r[1], cam, cols, c);
@@ -207,7 +210,11 @@ public final class Segmenter {
         return new Labels(cols, rows, id);
     }
 
-    /** Region growing with the consistency rule; returns the number of regions kept. */
+    /**
+     * Region growing with the consistency rule, as a breadth-first search over the block grid.
+     * Seeds are taken in scan order and the queue is a plain int array, so the result is the same
+     * on every run. Returns the number of regions kept.
+     */
     static int grow(boolean[] cand, float[] rx, float[] ry, int cols, int rows, SegConfig c, int minSize, byte[] out) {
         int n = cand.length;
         boolean[] seen = new boolean[n];
@@ -218,6 +225,7 @@ public final class Segmenter {
             if (!cand[s] || seen[s]) {
                 continue;
             }
+            // Start a new region at s. queue[0..tail) ends up holding every member of the region.
             int head = 0;
             int tail = 0;
             queue[tail++] = s;
@@ -226,14 +234,17 @@ public final class Segmenter {
                 int i = queue[head++];
                 int cx = i % cols;
                 int cy = i / cols;
+                // Left, right, up, down; -1 where the grid edge cuts a neighbour off.
                 int[] nb = {cx > 0 ? i - 1 : -1, cx < cols - 1 ? i + 1 : -1, cy > 0 ? i - cols : -1, cy < rows - 1 ? i + cols : -1};
                 for (int j : nb) {
+                    // A neighbour joins only if its residual agrees with the block that reached it.
                     if (j >= 0 && cand[j] && !seen[j] && consistent(rx, ry, i, j, c, cosMax)) {
                         seen[j] = true;
                         queue[tail++] = j;
                     }
                 }
             }
+            // Keep the region only if it is big enough and its members really move as one.
             if (tail >= minSize && spread(rx, ry, queue, tail) <= c.maxSpreadPx()) {
                 kept++;
                 byte label = (byte) Math.min(kept, 255);
@@ -246,7 +257,7 @@ public final class Segmenter {
     }
 
     /**
-     * P1.9: removes regions that look like parallax: the region's median residual points the same way
+     * Removes regions that look like parallax: the region's median residual points the same way
      * as the camera's vector at the region's centroid (within parallaxDeg), and that vector is at
      * least parallaxMinCam long. Ids are left as they are (gaps are fine; only zero vs non-zero is
      * stored in the .cmp).
@@ -339,7 +350,7 @@ public final class Segmenter {
 
 
     /**
-     * P1.7 clean-up, all on the label grid (no new motion evidence):
+     * Clean-up, all on the label grid (no new motion evidence):
      * <ol>
      * <li>a background block with at least 3 of its 4 neighbours in the same region joins it (flat
      *     patches on a jacket, blocks the camera test or the gate removed inside a person);</li>
@@ -459,7 +470,7 @@ public final class Segmenter {
     }
 
     /**
-     * P1.8 temporal vote with one frame of lookahead. A block is foreground in frame t if it is
+     * Temporal vote with one frame of lookahead. A block is foreground in frame t if it is
      * foreground in at least 2 of t-1, t, t+1. Frames are not aligned (the camera moves up to two
      * blocks per frame on video2), so the neighbours are read through motion: frame t-1 at the
      * position block i came from (its own vector), frame t+1 at the position that frame's vector at i
@@ -510,7 +521,7 @@ public final class Segmenter {
     }
 
     /**
-     * Per-frame facts for the stats CSV (frame 0 copies frame 1, 03 D4).
+     * Per-frame facts for the stats CSV (frame 0 copies frame 1).
      *
      * @param frame        frame index
      * @param camera       accepted camera model
@@ -527,7 +538,7 @@ public final class Segmenter {
     }
 
     /**
-     * The whole P1 pipeline for one clip, streamed frame by frame (never holds the clip): motion
+     * The whole segmentation pipeline for one clip, streamed frame by frame (never holds the clip): motion
      * search seeded with the previous field and camera vector, reliability, camera fit, candidate
      * gate, grouping, fill, temporal vote. Feed padded Y planes in order; final labels come out one
      * frame behind (two at the start: frame 0 copies frame 1).
@@ -596,7 +607,7 @@ public final class Segmenter {
             FrameStats fs = new FrameStats((int) p[0], GlobalMotion.Kind.values()[(int) p[1]], p[2], p[3], p[4],
                     pct(fin), regions(fin), p[5], p[6]);
             if (fs.frame() == 1) {
-                ready.add(fin);   // frame 0 reuses frame 1's labels (03 D4)
+                ready.add(fin);   // frame 0 has no previous frame, so it reuses frame 1's labels
                 stats.add(new FrameStats(0, fs.camera(), fs.inlierRatio(), fs.reliablePct(), fs.rawFgPct(), fs.fgPct(), fs.regions(), 0, 0));
             }
             ready.add(fin);

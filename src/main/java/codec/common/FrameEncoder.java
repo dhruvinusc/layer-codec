@@ -9,13 +9,13 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 
 /**
- * Encoder side of brief part 2 (checklist C1 to C5): frame + macroblock labels in, raw baseline
- * payload bytes out, ready for {@link CmpFormat.Writer#writePayload}. Approved by PM Nov 11
- * (Window B owns it). EncoderMain calls this at wire-up; CodecHarness calls it with fake labels.
+ * Encoder side of the brief's part 2: a frame and its macroblock labels go in, raw baseline
+ * payload bytes come out, ready for {@link CmpFormat.Writer#writePayload}. EncoderMain calls it
+ * for real clips; CodecHarness calls it with made-up labels for testing.
  *
- * <p>Steps: pad to the macroblock grid (03 D5), derive block_type per 8x8 block from its 16x16
- * label (C1), 8x8 DCT on R, G, B (C2), quantize with n1 or n2 by block_type (C3), serialize in
- * scan line order (C4, C5). No segmentation logic here: labels arrive finished.
+ * <p>Steps: pad to the macroblock grid, give each 8x8 block the label of its 16x16 macroblock,
+ * run the 8x8 DCT on R, G and B, quantize with n1 or n2 depending on that label, and write the
+ * blocks in scan line order. No segmentation happens here: the labels arrive finished.
  *
  * <p>Thread safety: no shared mutable state; {@link #encodeParallel} splits block rows across a
  * pool, each task writing its own rows, so the bytes are identical to {@link #encode} (tested).
