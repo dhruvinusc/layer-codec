@@ -1,4 +1,4 @@
-# 25 hardest questions (two-sentence answers + proof)
+# 29 hardest questions (two-sentence answers + proof)
 
 Mac numbers. Sources: HANDOFF = `claude/08`, REPORT = `docs/final_report_draft.md`, LAB = `lab/story/02-lab-story.md`.
 
@@ -80,3 +80,16 @@ The codec has no entropy coder and predicts at most every second frame, so it ca
 
 25. **You used AI tools. What did you do yourself?**
 AI helped with planning, code review and drafting documents; that is stated in the report. Every decision is logged with its options and a measured number, and I can walk through any line here. *Proof:* REPORT 10; `docs/decision-log/`; 234 tests.
+
+## Field clips (my own phone videos)
+26. **Did you tune anything for your own clips?**
+No: the same frozen code and the same thresholds as the course clips, so they test the method, not the settings. They are kept out of the official results because the brief's test set is the four course clips. *Proof:* CLIP GUIDE Mac runs; `freeze-code` 88fc181.
+
+27. **Why is the head-on car missed?**
+A car driving toward the camera grows from its centre instead of sliding, so the middle squares barely move and the edge squares move outward in opposite directions. Small motion fails the leftover test and opposite directions fail the neighbour test. *Proof:* CLIP GUIDE, cars clips; neighbour rule J16, `Segmenter.java` 297 to 309.
+
+28. **Two people walking together became one region. Is that wrong?**
+By the brief's rule it is expected: they touch and move the same way, so contiguous plus consistent joins them, and both still get the fine step. Separating them would need content (what a person looks like), which the brief rules out by asking for motion only. *Proof:* CLIP GUIDE, shoppers; brief B7, B9.
+
+29. **Phone video is 1080 by 1920 and one clip is 29.97 fps. Did the player cope?**
+Yes: all five played with 0 dropped frames and within 0.17% of the true length, and the 29.97 clip kept its exact rate because the header stores the rate as an exact fraction (numerator and denominator), not a rounded number. Encoding took 40 to 149 seconds per clip, well under 10 minutes. *Proof:* CLIP GUIDE Mac numbers; header fps num/den, J29.

@@ -78,7 +78,7 @@ Bricks repeat every few pixels. A square of bricks can match "one brick over" al
 
 ---
 
-## Slide 4. Compressing a square (1:30 / 4:30)
+## Slide 4. Compressing a square (1:15 / 4:15)
 
 **SAY**
 "Each 8 by 8 square is first rewritten as a mix of 64 standard patterns, from smooth to busy. This step is called the DCT **[J25]**, and it loses nothing: I can turn it back into the exact pixels.
@@ -105,7 +105,7 @@ Most of a natural picture is smooth, so most of the weight sits in the few smoot
 
 ---
 
-## Slide 5. The file and the player (0:30 / 5:00)
+## Slide 5. The file and the player (0:30 / 4:45)
 
 **SAY**
 "The file stores the two step sizes, then for every square a single byte saying moving or not, and its weights for red, green and blue **[J28]**. That is exactly the brief's order. I added a small header with the picture size and frame rate, so the player needs nothing but this file **[J29, J32]**. To play 1080p smoothly, four threads decode frames at the same time **[J37]**, and a clock shows each one exactly on time **[J38]**."
@@ -123,22 +123,22 @@ A short strip: `[ header ] [ frame 1 ] [ frame 2 ] ...` and under one frame: `[ 
 
 ---
 
-## Slide 6. LIVE DEMO (2:00 / 7:00)
+## Slide 6. LIVE DEMO (2:00 / 6:45)
 
 **>>> DEMO STARTS. Switch to Terminal. The menu (`bash demo/demo.sh`) is open; items 0 and 1 were run before the talk.**
 
 | Clock | Press | Say |
 |---|---|---|
-| 5:00 | **menu 2** [J0] | "This is the brief's exact command: myencoder, video2, 2 for moving, 5 for background." While it runs: "It is finding motion, the camera, the labels, and compressing. About 20 seconds." |
-| 5:25 | read the `encoded` line | "Done, well under the 10 minute limit." |
-| 5:30 | **menu 4** [J31] | "The player gets only the compressed file. I also give it the original, to compare." |
-| 5:35 | `space` [J38] | "It plays at the original speed, 30 frames per second." |
-| 5:45 | `space`, `right`, `right`, `left` [J39, J40] | "Pause. Step forward. Step back." |
-| 5:55 | `s` [J41] | "Left is compressed, right is the original." |
-| 6:05 | `d` [J43] | "The tinted squares are the ones marked as moving. The player knows this from the file itself." |
-| 6:15 | `z`, drag onto a jogger [J42] | "Zoomed to real pixels: the jogger is clean, the trees are blocky. That is the whole idea." |
-| 6:40 | `q`, read the `play` line | "No frames skipped." |
-| 6:50 | back to slides | |
+| 4:45 | **menu 2** [J0] | "This is the brief's exact command: myencoder, video2, 2 for moving, 5 for background." While it runs: "It is finding motion, the camera, the labels, and compressing. About 20 seconds." |
+| 5:10 | read the `encoded` line | "Done, well under the 10 minute limit." |
+| 5:15 | **menu 4** [J31] | "The player gets only the compressed file. I also give it the original, to compare." |
+| 5:20 | `space` [J38] | "It plays at the original speed, 30 frames per second." |
+| 5:30 | `space`, `right`, `right`, `left` [J39, J40] | "Pause. Step forward. Step back." |
+| 5:40 | `s` [J41] | "Left is compressed, right is the original." |
+| 5:50 | `d` [J43] | "The tinted squares are the ones marked as moving. The player knows this from the file itself." |
+| 6:00 | `z`, drag onto a jogger [J42] | "Zoomed to real pixels: the jogger is clean, the trees are blocky. That is the whole idea." |
+| 6:25 | `q`, read the `play` line | "No frames skipped." |
+| 6:35 | back to slides | |
 
 If anything fails: "Here is the same run recorded." Play the backup video. Do not debug live (`demo/DEBUG.md`).
 
@@ -149,7 +149,7 @@ It compresses in about 20 seconds, so it can run live. The big clips are prepare
 
 ---
 
-## Slide 7. The proof: swap the two steps (1:00 / 8:00)
+## Slide 7. The proof: swap the two steps (1:00 / 7:45)
 
 **SAY**
 "The brief says the effect must flip when the two step sizes are swapped. Here is the same SAL frame three ways. Original. Then moving squares fine, background coarse: the wall is blocky, the walker is clean. Then swapped: now the walker is blocky and the wall is clean. Same video, same labels; only the step sizes moved **[J34]**."
@@ -167,10 +167,38 @@ Quality is measured separately for moving and still squares. One overall score w
 
 ---
 
-## Slide 8. Does the uneven split actually pay? (1:00 / 9:00)
+## Slide 7b. Field clips: my own videos (0:45 / 8:30)
 
 **SAY**
-"After the code was finished I tested the question directly: for the same file size, is it better to split unevenly or evenly? The blue line is the even split. Both parts get the same step, so to make the file smaller the walker has to get worse too. The green line keeps the walker's step fixed and only makes the background rougher **[J50]**. The walker's quality stays flat while the file shrinks. Concretely: the uneven version is smaller and the walker looks much better."
+"I filmed five clips of my own on my phone to test it beyond the course videos: traffic, shoppers, a friend on a scooter. Same code, same settings, nothing tuned. All five played with no dropped frames.
+The win: the scooter is found even while I pan to follow him, because his motion disagrees with the camera and agrees with itself.
+The miss: a car driving straight at me. It does not slide, it grows, so its squares barely move sideways and my method does not see it. That is the limit of one arrow per square."
+
+**ON THE SLIDE**
+Two frames side by side, each with the moving squares tinted:
+- Left, "Found": the scooter rider while the camera pans.
+- Right, "Missed": the head-on car, mostly untinted.
+One line underneath: "5 phone clips, same code, same settings: 0 frames dropped."
+
+**WHY THE PICTURES LOOK THAT WAY**
+- Scooter: the camera's motion is removed first, so the background goes quiet and the rider's leftover motion stands out and points one way.
+- Head-on car: an object coming toward you grows from its centre. The middle squares hardly move at all, and the edge squares move outward in opposite directions. Small motion fails the "big leftover" test, and opposite directions fail the "neighbours agree" test.
+
+**WHY WE CHOSE IT**
+Test beyond the clips I tuned on, without retuning, so the result says something about the method rather than about the settings. Kept out of the official results because the brief's test set is the four course clips.
+
+**IF HE ASKS**
+- *What clips:* five iPhone videos, 1080 by 1920 portrait, the same pixel count as the 1080p course clips: cars with a still camera, cars both ways, shoppers indoors, a scooter followed by the camera, a fast scooter.
+- *Numbers:* all five played with 0 dropped frames and within 0.17% of the true clip length; encoding took 40 to 149 seconds per clip, under the 10 minute limit. One clip is 29.97 frames per second, and the player kept that exact rate.
+- *Other misses:* a black shirt against black baskets (no texture, so no reliable arrow), two people walking side by side merge into one region (same motion, touching), and poles close to the camera while panning (parallax, same as the video2 fence).
+- *Did you change anything for them?* No. Same frozen code, same thresholds.
+
+---
+
+## Slide 8. Does the uneven split actually pay? (0:45 / 9:15)
+
+**SAY**
+"After the code was finished I tested the question directly: for the same file size, is it better to split unevenly or evenly? The blue line is the even split. Both parts get the same step, so to make the file smaller the walker has to get worse too. The green line keeps the walker's step fixed and only makes the background rougher **[J50]**. The walker stays sharp while the file shrinks."
 
 **ON THE SLIDE**
 `docs/img/rd_video2_even_vs_uneven.png`, but only the first of its three panels (the other two show the same shape).
@@ -188,10 +216,10 @@ For streaming: keep the walker's step fixed, then pick the roughest background t
 
 ---
 
-## Slide 9. Extra credit (0:30 / 9:30)
+## Slide 9. Extra credit (0:15 / 9:30)
 
 **SAY**
-"Two extras, both switched off by default. The first stores the zeros more cleverly **[J44, J45]**: the picture is exactly the same and the file is about a third smaller. The second stores every second frame as just the difference from the frame before **[J46]**: the file is roughly half the size and looks the same."
+"Two extras, off by default: packing the zeros **[J44, J45]** makes the file a third smaller with identical pixels, and storing every second frame as a difference **[J46]** makes it about half the size."
 
 **ON THE SLIDE**
 `docs/img/sizes_4clips.png`: three bars per clip, normal, extra 1, extra 2.
@@ -226,4 +254,4 @@ Three short lines with a small picture each:
 Every [J] tag above is in `presentation/code_glossary.md`: file, line, one sentence to say, and the test that proves it. The glossary also has a slide-to-job table for Q&A.
 
 ## Timing check
-0:30 + 1:00 + 1:30 + 1:30 + 0:30 + 2:00 + 1:00 + 1:00 + 0:30 + 0:30 = 10:00. If you run long, shorten slide 9 to one sentence.
+0:30 + 1:00 + 1:30 + 1:15 + 0:30 + 2:00 + 1:00 + 0:45 (field clips) + 0:45 + 0:15 + 0:30 = 10:00. If you run long, drop the "IF HE ASKS" detail from slide 7b and keep only the win and the miss.
