@@ -2,7 +2,7 @@
 
 CSCI 576, Professor Parag Havaldar. Dhruvin Jhaveri. December 2, 2026.
 
-All timings and sizes are measured on the project machine, a MacBook Air (8 cores, fanless, JDK 21, FFmpeg 7.1), unless marked otherwise. Bracketed references point to the evidence in the repository: `RESULTS "section"` is a section of `docs/RESULTS.md`, and ids such as `P1-L13` are entries in `docs/decision-log/`, where every design choice is written down with the options considered and the reason.
+All timings and sizes are measured on the project machine, a MacBook Air (8 cores, fanless, JDK 21, FFmpeg 7.1), unless marked otherwise. Bracketed references point to the evidence in the repository: `RESULTS "section"` is a section of `docs/RESULTS.md`, and ids such as `P1-L13` are entries in `docs/history/decision-log/`, where every design choice is written down with the options considered and the reason.
 
 ---
 
@@ -53,34 +53,34 @@ The naive baseline uses the same vectors and camera model with the simplest rule
 | Stairs | not run | 1.57% | 74 of 345 |
 | SAL | 8.68% | 1.07% | 10 of 436 |
 
-Share of 16x16 blocks labelled foreground; frame 0 excluded because it copies frame 1. [RESULTS "Mac re-measure (Nov 16)"]
+Share of 16x16 blocks labelled foreground; frame 0 excluded because it copies frame 1. [RESULTS "Segmentation"]
 
 On the same vectors and camera model, the final rules cut SAL from 8.68% to 1.07% of blocks and video2 from 16.56% to 7.25%. In the naive result the walker is found but the SAL brick wall and the video2 fence light up; in the final result the SAL wall is clean and the walker is kept. Images: `docs/img/naive_*.jpg` and `docs/img/p1_final_*.jpg`.
 
 Supporting numbers:
-- The camera homography was accepted on 1679 of 1680 frame pairs and explains 74% to 90% of trusted blocks on average. [RESULTS "P1.5 camera motion"]
-- The fast search agrees with the exact search within 1 px on 89.9% (SAL) to 95.9% (video2) of textured blocks. Real misses are 1.6% to 4.0%; most SAL disagreements are equally good matches on repeating bricks. [RESULTS "W2 / D13 Mac numbers", P1-L10]
-- Motion search takes 190 ms per 1080p frame; segmentation of the whole SAL clip takes 90.7 s. [RESULTS "W2 / D13 Mac numbers"]
-- Labels are deterministic: the same input twice gives byte-identical labels (SHA-256). A different FFmpeg build decodes slightly different pixels, so labels from another machine can differ by about 0.1% of blocks. [RESULTS "P1.10 final labels and determinism"]
+- The camera homography was accepted on 1679 of 1680 frame pairs and explains 74% to 90% of trusted blocks on average. [RESULTS "Segmentation"]
+- The fast search agrees with the exact search within 1 px on 89.9% (SAL) to 95.9% (video2) of textured blocks. Real misses are 1.6% to 4.0%; most SAL disagreements are equally good matches on repeating bricks. [RESULTS "Segmentation", P1-L10]
+- Motion search takes 190 ms per 1080p frame; segmentation of the whole SAL clip takes 90.7 s. [RESULTS "Segmentation"]
+- Labels are deterministic: the same input twice gives byte-identical labels (SHA-256). A different FFmpeg build decodes slightly different pixels, so labels from another machine can differ by about 0.1% of blocks. [RESULTS "Segmentation"]
 
 ## 4. Compression and the .cmp format (encoder, part 2)
 
-- **Blocks.** The padded frame is split into 8x8 blocks in scan line order. Each block inherits the label of its 16x16 macroblock; on the four real encodes every block type equals its macroblock's label, with 0 mismatches over 34.1 million blocks. [RESULTS "C1 label check method"]
-- **DCT.** The orthonormal 8x8 DCT used in class, on R, G and B, with the level shifted by 128 before the forward transform. The DCT itself loses nothing: at n = 0 only rounding is lost (59 dB). [RESULTS "P2.9 Mac measurements", P2-L1]
+- **Blocks.** The padded frame is split into 8x8 blocks in scan line order. Each block inherits the label of its 16x16 macroblock; on the four real encodes every block type equals its macroblock's label, with 0 mismatches over 34.1 million blocks. [RESULTS "Compression"]
+- **DCT.** The orthonormal 8x8 DCT used in class, on R, G and B, with the level shifted by 128 before the forward transform. The DCT itself loses nothing: at n = 0 only rounding is lost (59 dB). [RESULTS "Compression", P2-L1]
 - **Quantization.** Every coefficient is divided by 2^n and rounded half away from zero; the decoder multiplies back. The same step is used for all 64 coefficients, as the brief asks. This is the only lossy step. [P2-L4]
 - **File format.** A binary file instead of the brief's suggested text layout, with the same logical content and order. A 48-byte header carries the magic `LYRC`, version, flags, true and padded size, frame rate (as an exact fraction), frame count, n1 and n2. Each frame then stores, per 8x8 block, its block type and 64 R, 64 G and 64 B coefficients as 16-bit integers, compressed with zlib, and a frame table at the end allows stepping back and seeking. The brief's text layout has no place for size, frame rate or frame count, and as text the SAL clip would exceed 15 GB. The tool `CmpDump` prints any frame in the brief's exact text layout. [P2-L5 to P2-L9, P2-L14]
-- **Size.** zlib is lossless and saves 3x to 9.6x depending on n and foreground share. [RESULTS "P2.9 Mac measurements"] The .cmp is still much larger than the mp4, because the baseline stores every frame on its own, with no prediction between frames and no entropy coding beyond zlib.
+- **Size.** zlib is lossless and saves 3x to 9.6x depending on n and foreground share. [RESULTS "Compression"] The .cmp is still much larger than the mp4, because the baseline stores every frame on its own, with no prediction between frames and no entropy coding beyond zlib.
 
 ## 5. Decoder and player (part 3)
 
 - **Decoding.** The decoder reads only the .cmp. It dequantizes each block with n1 or n2 according to its block type, inverts the DCT, crops the padding and shows the frame.
-- **Real-time playback.** One 1080p frame takes 54.1 ms to decode on one core at (2,5), against a 33.3 ms budget at 30 fps. So whole frames are decoded on four worker threads at once and shown in order on a steady clock (frame i is due at start + i / fps). This reaches 77 to 82 fps on the 1080p clips, bit-identical to serial decoding. [RESULTS "Final Mac check", RESULTS "P3.1 DecodePipeline bench"]
+- **Real-time playback.** One 1080p frame takes 54.1 ms to decode on one core at (2,5), against a 33.3 ms budget at 30 fps. So whole frames are decoded on four worker threads at once and shown in order on a steady clock (frame i is due at start + i / fps). This reaches 77 to 82 fps on the 1080p clips, bit-identical to serial decoding. [RESULTS "Final check", RESULTS "Decoder and playback"]
 - **Late frames.** A frame that would be late is dropped to hold the original rate; dropped and late frames are counted on screen. [P3-L7]
 - **Controls.** Space plays and pauses, the arrows step forward and back (the last 30 frames are cached, older ones are decoded again through the frame table), `s` shows the decoded and original video side by side (the original mp4 is an optional second argument), `z` zooms to 1:1 so block artifacts are not hidden by scaling, and `d` tints the foreground blocks using the block types in the file. [P3-L6, P3-L11, P3-L13]
 
 ## 6. Results
 
-All rows below come from the final check on the Mac at the submitted code (commit 88fc181, 234 automated tests passing). [RESULTS "Final Mac check"]
+All rows below come from the final check on the Mac at the submitted code (commit 88fc181, 234 automated tests passing). [RESULTS "Final check"]
 
 ### 6.1 Quality per layer and size at (n1, n2) = (2, 5)
 
@@ -102,13 +102,13 @@ The foreground is 10 to 14 dB cleaner than the background on every clip. The ove
 | (2,5) | 47.52 dB | 34.34 dB | 424.7 MB |
 | (5,2) | 34.40 dB | 47.72 dB | 1142.8 MB |
 
-The cleaner layer swaps exactly as the brief requires. The (5,2) file is 2.7 times larger because the background, about 99% of the blocks, now gets the fine step. Image: `docs/img/p3r_SAL_swap_crop_x3.png` (original, (2,5), (5,2) at 1:1, enlarged 3x). [RESULTS "Final Mac check"]
+The cleaner layer swaps exactly as the brief requires. The (5,2) file is 2.7 times larger because the background, about 99% of the blocks, now gets the fine step. Image: `docs/img/p3r_SAL_swap_crop_x3.png` (original, (2,5), (5,2) at 1:1, enlarged 3x). [RESULTS "Final check"]
 
 ### 6.3 Playback and time limit
 
-- All 12 files (4 clips x 3 modes, section 9) played with the plain `./mydecoder`: 0 dropped frames in every run, and playback duration within 0.10% of the clip length. [RESULTS "Final Mac check"]
-- Full-length SAL played at (2,5) and (0,0) on battery with no thermal slowdown: 29.9 fps over the first 100 frames and 30.0 fps over the last 100. [RESULTS "Quiet run"]
-- Encode plus decode: the worst case is SAL at (5,2), 130 s to encode plus 14.6 s of real-time playback, well under the 10 minute limit. [RESULTS "Final Mac check", RESULTS "E4"]
+- All 12 files (4 clips x 3 modes, section 9) played with the plain `./mydecoder`: 0 dropped frames in every run, and playback duration within 0.10% of the clip length. [RESULTS "Final check"]
+- Full-length SAL played at (2,5) and (0,0) on battery with no thermal slowdown: 29.9 fps over the first 100 frames and 30.0 fps over the last 100. [RESULTS "Decoder and playback"]
+- Encode plus decode: the worst case is SAL at (5,2), 130 s to encode plus 14.6 s of real-time playback, well under the 10 minute limit. [RESULTS "Final check", RESULTS "Final check"]
 
 ## 7. Uneven bits for streaming
 
@@ -146,7 +146,7 @@ Both options are off by default; the baseline bytes are pinned by a golden test,
 `./myencoder input.mp4 n1 n2 --mode rle` writes the same quantized coefficients in zigzag order (low frequencies first) and codes each run of zeros as one count, ending each block after its last nonzero value. The pictures are identical and the files are 29% to 40% smaller. Decoding is also faster, because most coefficients at step 2^5 are zero and are no longer stored one by one. [P4-L2]
 
 ### 9.2 Motion-compensated residual coding (.cmp mode 2)
-Every second frame is predicted from the previous decoded frame, moved by one motion vector per 16x16 macroblock; only the difference (the residual) is transformed and quantized, with 2^n1 for foreground and 2^n2 for background as before, then stored with the mode 1 coding. The other frames are coded on their own. Groups of 2 were chosen after measuring lengths 2 to 8: with 2^n rounding, small changes are lost on each predicted frame, so longer groups were both larger and worse. Each pair decodes independently, so `./mydecoder` plays mode 2 in real time, including at 1080p. [P4-L1, P4-L3, RESULTS "P4-A"]
+Every second frame is predicted from the previous decoded frame, moved by one motion vector per 16x16 macroblock; only the difference (the residual) is transformed and quantized, with 2^n1 for foreground and 2^n2 for background as before, then stored with the mode 1 coding. The other frames are coded on their own. Groups of 2 were chosen after measuring lengths 2 to 8: with 2^n rounding, small changes are lost on each predicted frame, so longer groups were both larger and worse. Each pair decodes independently, so `./mydecoder` plays mode 2 in real time, including at 1080p. [P4-L1, P4-L3, RESULTS "Extra credit"]
 
 ### 9.3 Results at (2,5)
 
@@ -157,7 +157,7 @@ Every second frame is predicted from the previous decoded frame, moved by one mo
 | Stairs | 291.0 MB | 193.9 MB (-33%), same pixels | 151.1 MB (-48%), 35.11 / 47.84 / 35.04 dB |
 | SAL | 424.7 MB | 269.0 MB (-37%), same pixels | 207.3 MB (-51%), 34.24 / 47.31 / 34.20 dB |
 
-Mode 2 halves the file on three of four clips, staying within 0.24 dB of the baseline on every clip and layer. All three modes decode faster than real time (1080p: baseline 77 to 82 fps, mode 1 95 to 105 fps, mode 2 79 to 88 fps). [RESULTS "Final Mac check"]
+Mode 2 halves the file on three of four clips, staying within 0.24 dB of the baseline on every clip and layer. All three modes decode faster than real time (1080p: baseline 77 to 82 fps, mode 1 95 to 105 fps, mode 2 79 to 88 fps). [RESULTS "Final check"]
 
 ## 10. Limits
 
@@ -189,4 +189,4 @@ Inspection tools (not needed to grade): `codec.tools.VizSeg` draws segmentation 
 
 - **Java 21** (Temurin JDK) for all code, built with the **Gradle** wrapper; **JUnit 5** for the 234 automated tests, including slow textbook versions of the DCT and the motion search that check the fast versions, and a golden test that pins the baseline file bytes.
 - **FFmpeg / ffprobe** only to decode the input mp4 into RGB frames and read its metadata. No FFmpeg filters or encoders are used for compression, segmentation or display.
-- **AI assistance** was used for planning the work, reviewing code, and drafting documents such as this report and the decision logs. Every design choice was measured, written down with its reasons and alternatives in `docs/decision-log/`, and is understood and defended by me.
+- **AI assistance** was used for planning the work, reviewing code, and drafting documents such as this report and the decision logs. Every design choice was measured, written down with its reasons and alternatives in `docs/history/decision-log/`, and is understood and defended by me.

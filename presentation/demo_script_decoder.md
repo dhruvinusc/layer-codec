@@ -27,7 +27,7 @@ Say:
   nothing else is needed."
 - "It plays at the original 30 frames per second. The status line counts dropped and late frames
   honestly."
-Numbers: full SAL clip plays in 14.58 s against 14.57 s, 0 dropped frames (RESULTS "Quiet run").
+Numbers: full SAL clip plays in 14.58 s against 14.57 s, 0 dropped frames (RESULTS "Decoder and playback").
 
 ## Step 2. Side by side at n1 = 2, n2 = 5 (about 80 s)
 ```
@@ -43,7 +43,7 @@ Numbers: full SAL clip plays in 14.58 s against 14.57 s, 0 dropped frames (RESUL
    Say: "Red blocks are the ones the encoder marked foreground. The decoder knows this from one byte per
    block in the file, no segmentation code in the decoder. Foreground uses 2 to the 2, background 2 to
    the 5: the red blocks stay sharp, the others go blocky."
-Numbers (re-check with real labels): foreground PSNR 47.7 dB vs background 34.5 dB at (2,5) (RESULTS P2.9).
+Numbers (re-check with real labels): foreground PSNR 47.7 dB vs background 34.5 dB at (2,5) (RESULTS "Compression").
 Press q.
 
 ## Step 3. Swap the layers: n1 = 5, n2 = 2 (about 40 s)

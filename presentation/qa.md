@@ -13,10 +13,10 @@ A homography is exact for a flat surface under any camera motion, and Stairs is 
 No: fixed seed and fixed 500 iterations, so the same input gives byte-identical labels. Across machines labels differ by 0.11% only because a different FFmpeg decodes slightly different pixels. *Proof:* `GlobalMotionTest.sameInputGivesIdenticalModel`; SHA-256 match [REPORT 3.2].
 
 4. **How do you know the fast search finds the right vectors?**
-I kept a full search as the reference and compared: they agree within 1 px on 89.9% (SAL) to 95.9% (video2) of textured blocks. Most SAL disagreements are equally good matches on repeating bricks; real misses are 1.6 to 4.0%. *Proof:* RESULTS "W2 / D13 Mac numbers"; `MotionEstimatorTest.matchesTextbookOracleOnMixedContent`.
+I kept a full search as the reference and compared: they agree within 1 px on 89.9% (SAL) to 95.9% (video2) of textured blocks. Most SAL disagreements are equally good matches on repeating bricks; real misses are 1.6 to 4.0%. *Proof:* RESULTS "Segmentation"; `MotionEstimatorTest.matchesTextbookOracleOnMixedContent`.
 
 5. **Why hierarchical search, and how far can it reach?**
-video2's camera moves 16+ px per frame; a full search of plus or minus 32 is 4225 positions per block, 1.24 s per 1080p frame already at plus or minus 16. Searching plus or minus 8 at quarter size covers about 32 px for a fraction of that: 190 ms per 1080p frame. *Proof:* 139.6 ns per SAD [05]; RESULTS "W2 / D13".
+video2's camera moves 16+ px per frame; a full search of plus or minus 32 is 4225 positions per block, 1.24 s per 1080p frame already at plus or minus 16. Searching plus or minus 8 at quarter size covers about 32 px for a fraction of that: 190 ms per 1080p frame. *Proof:* 139.6 ns per SAD [05]; RESULTS "Segmentation".
 
 6. **Why SAD when the brief says MAD?**
 MAD is SAD divided by 256, a constant, so both pick exactly the same vector. SAD stays an integer, so comparisons are exact and ties are deterministic. *Proof:* comment `MotionEstimator.java:12-13`; `sadZeroAndMadAreReportedCorrectly`.
@@ -31,7 +31,7 @@ Yes: same seeded vectors, same camera model, only the rule differs. The drop com
 Parallax: the camera runs beside the joggers, so near things slide faster than the far background and one camera model cannot explain both depths. I built a filter that removes it but kept it off because it also deleted a real person walking against the camera. *Proof:* `docs/img/p1_parallax_video2_off.jpg` vs `_on.jpg`; 6.95 to 4.15% (sandbox) [REPORT 7].
 
 10. **Show me a failure.**
-Stairs: the distant walker moves about 2 px against the camera, near the model's 0.7 px error, so 74 of 346 frames have no foreground and he gets the coarse step there. I tried four fixes; none found him without adding false foreground elsewhere. *Proof:* RESULTS "Mac re-measure (Nov 16)", P1-L16, P1-L21.
+Stairs: the distant walker moves about 2 px against the camera, near the model's 0.7 px error, so 74 of 346 frames have no foreground and he gets the coarse step there. I tried four fixes; none found him without adding false foreground elsewhere. *Proof:* RESULTS "Segmentation", P1-L16, P1-L21.
 
 11. **Why lean toward foreground when unsure?**
 A false background blurs a person, which a viewer notices; a false foreground only costs bytes. That is also why the parallax filter is off. *Proof:* 03 D3, P1-L20.
@@ -44,7 +44,7 @@ Blocks a person just revealed have no good match in the previous frame, so their
 
 ## Compression and file
 14. **Where exactly is information lost?**
-Only in rounding c / 2^n to a whole number; the DCT, zlib and the file are lossless. At n = 0 only rounding to integers is lost: 59 dB. *Proof:* `Quant.java:31-35`; `DctTest.forwardThenInverseReturnsInput`; RESULTS "P2.9".
+Only in rounding c / 2^n to a whole number; the DCT, zlib and the file are lossless. At n = 0 only rounding to integers is lost: 59 dB. *Proof:* `Quant.java:31-35`; `DctTest.forwardThenInverseReturnsInput`; RESULTS "Compression".
 
 15. **Compute the DC of a flat block of 200.**
 Shift by 128 gives 72 per pixel; the orthonormal 8x8 DC is 8 times the mean, so 576, and all AC terms are 0. *Proof:* `DctTest.flatBlockOf200HasDc576AndNoAc`.
@@ -56,13 +56,13 @@ The baseline stores every frame on its own with 16-bit coefficients and only zli
 Same content in the same order, but the text layout has no size, frame rate or frame count, and SAL as text would exceed 15 GB. CmpDump prints any frame in your exact layout. *Proof:* demo menu 8; `CmpFormatTest.blocksAreInScanLineOrder385BytesEach`.
 
 18. **Isn't zlib entropy coding, which you said is not expected?**
-It is lossless general zipping, so it changes no pixel; the brief says entropy coding is not expected, not forbidden. It saves 3 to 9.6 times, and mostly on the zeros the background quantizer creates. *Proof:* RESULTS "P2.9".
+It is lossless general zipping, so it changes no pixel; the brief says entropy coding is not expected, not forbidden. It saves 3 to 9.6 times, and mostly on the zeros the background quantizer creates. *Proof:* RESULTS "Compression".
 
 19. **Why the same step for all 64 coefficients instead of a JPEG table?**
 The brief requires every table entry to be 2^n, uniform. A perceptual table would look better but break C3. *Proof:* `claude/01` C3; 03 D6.
 
 20. **Swapping n1 and n2 almost triples the SAL file. Why?**
-The background is about 99% of blocks, so n2 sets the size: at step 32 most background coefficients round to 0 and zip almost free, at step 4 they survive. 424.7 MB at (2,5), 1142.8 MB at (5,2). *Proof:* RESULTS "Final Mac check"; LAB L5.
+The background is about 99% of blocks, so n2 sets the size: at step 32 most background coefficients round to 0 and zip almost free, at step 4 they survive. 424.7 MB at (2,5), 1142.8 MB at (5,2). *Proof:* RESULTS "Final check"; LAB L5.
 
 ## Decoder and player
 21. **One 1080p frame takes 54 ms. How do you play at 30 fps?**
@@ -79,7 +79,7 @@ Every 8x8 block carries a type byte in the file; the decoder reads it to pick n1
 The codec has no entropy coder and predicts at most every second frame, so it cannot compete with H.264 on raw bitrate. The claim is about allocation: at any budget, fixing n1 keeps the subject at 47.7 dB and only the background pays; at the same size the uneven split gives the subject 9.2 dB more for 41% fewer bytes. *Proof:* `docs/img/rd_video2_even_vs_uneven.png`, LAB L3.
 
 25. **You used AI tools. What did you do yourself?**
-AI helped with planning, code review and drafting documents; that is stated in the report. Every decision is logged with its options and a measured number, and I can walk through any line here. *Proof:* REPORT 10; `docs/decision-log/`; 234 tests.
+AI helped with planning, code review and drafting documents; that is stated in the report. Every decision is logged with its options and a measured number, and I can walk through any line here. *Proof:* REPORT 10; `docs/history/decision-log/`; 234 tests.
 
 ## Field clips (my own phone videos)
 26. **Did you tune anything for your own clips?**

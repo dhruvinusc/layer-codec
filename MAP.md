@@ -22,14 +22,14 @@
 ## Prove it
 - `tools/final_check.sh`: rerun the full proof (about 30 min, quiet Mac, 6+ GB disk).
 - `docs/SPEC_CHECKLIST.md`: see every requirement A1 to F2 and its proof.
-- `docs/RESULTS.md`: look up a measured number (60 KB: grep `^## ` and read one section).
+- `docs/RESULTS.md`: look up a measured number (sections: Segmentation, Compression, Decoder and playback, Extra credit, Uneven bits, Field clips, Final check).
 - `docs/img/`: show a picture (swap crops, segmentation, side by side, sizes).
 
 ## Explain it
 - `docs/final_report_draft.md`: read the whole project as a report.
-- `docs/DECISIONS.md`: see the decisions where the brief is silent.
-- `docs/decision-log/`: dig into why a choice was made, by phase (126 KB: read one part).
-- `docs/WORKLOG.md`: see what happened when (47 KB: grep, do not read whole).
-- `docs/p1_report.md`, `docs/p3_report_draft.md`: read the segmentation and decoder reports.
+- `docs/DECISIONS.md`: see the 16 main design decisions, why, and the trade-off.
+- `docs/history/decision-log/`: dig into why a choice was made, by phase (126 KB: read one part).
+- `docs/history/WORKLOG.md`: see what happened when (47 KB: grep, do not read whole).
+- `docs/history/`: build-time reports and notes (segmentation and decoder phase reports, tutor brief).
 - `presentation/`: study and prepare the talk (LEARN.md, study_guide.md, demo scripts, notes).
 - `lab/`: the lab work L0 to L5 (separate `lab` branch, not on main, git excludes it here).

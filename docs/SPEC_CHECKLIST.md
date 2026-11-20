@@ -1,52 +1,69 @@
-# Spec Checklist
+# Requirements checklist
 
-Copy of Project doc `claude/01-requirements-checklist.md` (source of truth: Dhruvin-Project-Fall2026.docx).
-A box is ticked only with an evidence path beside it: a test name, a line in RESULTS.md, or an image in `docs/img/`.
-Due Wed Dec 2, 2026.
+Every requirement from the project brief, whether it is met, and the proof. Tests live in `src/test/java/codec/` and all 234 pass (`./gradlew build`). Numbers point to sections of `docs/RESULTS.md`; images are in `docs/img/`.
 
-## A. Command line
-- [x] A1 `myencoder input_video.mp4 n1 n2` produces `input_video.cmp` [A/W1, W2]: EncoderMain runs segmentation, compression and the .cmp writer (95ae08d); EncoderEndToEndTest.encodesEveryFrameWithTheHeaderTheDecoderNeeds (synthetic clip, writes input_video.cmp next to the input); all 4 clips encoded (RESULTS "W2 real encodes"); Mac `./myencoder data/SAL.mp4 2 5` in 1:51 (RESULTS "W2 / D13 Mac numbers"); argument checks EncoderMainTest
-- [x] A2 n1 = quantization exponent for FOREGROUND, n2 = for BACKGROUND [A/W1]: EncoderMain passes n1, n2 into the header in that order; FrameEncoder quantizes block_type 1 with 2^n1 and 0 with 2^n2; DecodeCoreTest.blockTypeChoosesTheExponent; real-label swap (2,5) fg 47.78 / bg 33.99 dB vs (5,2) fg 34.41 / bg 48.05 dB (RESULTS "P3.R" D5 swap)
-- [x] A3 `mydecoder input_video.cmp` decodes and renders ([C/P3] DecoderMain.play; Mac playback RESULTS.md "P3.3 Player, Mac run 2" and "run 4"; DecodePipelineTest.everyFrameIdenticalToSerialDecode)
-- [x] A4 Decoder needs nothing except the .cmp (all metadata in the file) ([C/P3] header carries size, padded size, fps, frame count, n1, n2 (03 D7); all playback, bench and error runs use the .cmp alone, original mp4 optional for side by side only; CmpFormatTest.headerIs48BytesWithPatchedCountsAndZeroReserved, DecoderMainErrorsTest)
+## Command line
 
-## B. Part 1: Segmentation (encoder)
-- [x] B1 Frame 0 treated as an I frame [A/P1.10]: frame 0 is coded on its own (every baseline frame is intra), and its labels reuse frame 1 (03 D4): SegmenterTemporalTest.runEmitsOneLabelSetPerFrameFrameZeroCopiesFrameOneAndIsDeterministic
-- [x] B2 Every later frame split into 16x16 macroblocks [A/P1.10]: Types.MB = 16, padded grid 30x53 / 120x68 (RESULTS "P1.10"), MotionEstimatorTest
-- [x] B3 One motion vector per macroblock, computed against the PREVIOUS frame [A/P1.10]: MotionEstimator.fullSearch / hierarchical against frame t-1, Segmenter.Run feeds consecutive frames; MotionEstimatorTest, RESULTS "P1.1", "P1.3"
-- [x] B4 Block MAD matching, brute force or a fast search (FME is "even better") [A/P1.10]: full search (oracle) + hierarchical 3-level default; agreement 89.8 to 95.8%, real misses 1.6 to 4.0%; RESULTS "P1.3", P1-L7, P1-L10
-- [x] B5 Search uses ONE component (Y preferred, R allowed) [A/P1.10]: Y from ColorConv.luma only (Segmenter.Run, VizSeg --stats)
-- [x] B6 Background = near-zero MVs (static camera) or one constant MV (moving camera) [A/P1.10]: camera motion generalised from one constant MV to a RANSAC homography (all 4 clips have a moving camera); background = residual within 2.5 px or explained by the camera; GlobalMotionTest, RESULTS "P1.5", P1-L11, P1-L15
-- [x] B7 Foreground regions are (a) contiguous and (b) consistent in MV direction ("important!") [A/P1.10]: 4-connected growth only through neighbours whose residuals agree, robust spread filter; SegmenterGroupTest, RESULTS "P1.6", P1-L13, P1-L14
-- [x] B8 Several independently moving regions supported [A/P1.10]: SegmenterGroupTest.touchingPatchesMovingOppositeWaysBecomeTwoRegions; up to 7.53 regions/frame on video2 (RESULTS "P1.10")
-- [x] B9 Classification from motion only, not content [A/P1.10]: inputs are vectors, match errors (SAD) and the camera model; no colour, shape or detector; texture only gates whether a vector is trusted (P1-L9)
-- [x] B10 Every macroblock of every frame has a foreground/background label [A/P1.10]: labels files cover every frame (518, 383, 346, 437 frames), LabelsIOTest, RESULTS "P1.10"
-- [x] B11 Visual demarcation like the brief's figure (green background, red/blue foreground) [A/P1.10]: VizSeg tint, docs/img/p1_final_*.jpg (and naive_*, p16_* to p19_* for before/after)
+| ID | Requirement | Met | Proof |
+|---|---|---|---|
+| A1 | `myencoder input_video.mp4 n1 n2` writes `input_video.cmp` | Yes | `EncoderEndToEndTest.encodesEveryFrameWithTheHeaderTheDecoderNeeds`; all 4 clips encoded (RESULTS "Final check") |
+| A2 | n1 is the foreground exponent, n2 the background exponent | Yes | `DecodeCoreTest.blockTypeChoosesTheExponent`; SAL (2,5) foreground 47.52 / background 34.34 dB, (5,2) 34.40 / 47.72 dB (RESULTS "Compression") |
+| A3 | `mydecoder input_video.cmp` decodes and plays | Yes | `DecodePipelineTest.everyFrameIdenticalToSerialDecode`; 12 files played (RESULTS "Final check") |
+| A4 | The decoder needs only the .cmp | Yes | The header holds size, padded size, frame rate, frame count, n1 and n2: `CmpFormatTest.headerIs48BytesWithPatchedCountsAndZeroReserved`; `DecoderMainTest.cmpOnly` |
 
-## C. Part 2: Compression (encoder)
-- [x] C1 Frame split into 8x8 blocks; each inherits its 16x16 macroblock's label [A/W2]: real labels, all 4 clips encoded at (2,5); every 8x8 block_type in the .cmp equals its macroblock's label in out/viz/final/<clip>.labels, 0 mismatches over 34.1 million blocks (RESULTS "W2"); CmpFormatTest 8x8-inherits test
-- [x] C2 8x8 DCT on all three channels (R, G, B) ([B/P2] DctTest.matchesTextbookOracleOnRandomBlocks; FrameEncoder DCT per R, G, B; FrameEncoderTest.roundTripAtN0IsNearlyExact; RESULTS.md 'P2.6 CodecHarness first real-clip runs' (n=0 59 dB on video2 and SAL))
-- [x] C3 Uniform quantization, every table entry 2^n (n1 foreground, n2 background) ([B/P2] QuantTest.errorIsAtMostHalfAStepAndGrowsWithN; DecodeCoreTest.blockTypeChoosesTheExponent; CodecHarnessTest.syntheticClipEndToEndIsDeterministicAndN0IsNearlyLossless; RESULTS.md P2.6 (video2 (2,5) fg 47.47 / bg 32.67 dB); docs/img/p2_SAL_n1_7_checker_crop1to1.png)
-- [x] C4 Blocks written in scan line order ([B/P2] CmpFormatTest.blocksAreInScanLineOrder385BytesEach; FrameEncoder block index b -> (b % blocksX, b / blocksX); real frames round trip in RESULTS.md P2.6)
-- [x] C5 File holds n1, n2, then per block: block_type + 64 coefficients x 3 channels ([B/P2] CmpFormat v1 (03 D7); CmpFormatTest.headerIs48BytesWithPatchedCountsAndZeroReserved, threeFramesRoundTripIdenticallyWithAndWithoutZlib; real .cmp files in RESULTS.md P2.6)
-- [x] C6 Baseline without zigzag, intermediary representation, or entropy coding is acceptable ([B/P2] coefficients row-major, no zigzag (P2-D1); zlib is lossless byte packing only (03 D7, ZioTest); baseline mode 0)
+## Segmentation
 
-## D. Part 3: Decoder
-- [x] D1 Parses n1, n2, block types, coefficients ([B/P2] CmpFormat.Reader + validation tests rule*; [C/P3] DecodeCoreTest.returnsTheBlockTypeMap, DecodePipelineTest.everyFrameIdenticalToSerialDecode, DecoderMainErrorsTest)
-- [x] D2 Dequantizes each block with n1 or n2 by block_type ([C/P3] DecodeCoreTest.blockTypeChoosesTheExponent, DecodeCoreTest.storedThreeRebuildsAs12InForegroundAnd96InBackground; RESULTS.md P2.9 fg/bg PSNR)
-- [x] D3 Inverse DCT, reconstruct, display ([C/P3] DctTest.zeroSkipInverseIsBitIdenticalToPlainInverse, DecodeCoreTest.nZeroRoundTripIsNearlyExactAndCropped, Player + Display on the Mac: RESULTS.md P3.3; docs/img/p3_SAL_n2_5_side_1to1.png)
-- [x] D4 Plays at the ORIGINAL frame rate ([C/P3] RESULTS.md "P3.3 Player, Mac run 2" (all clips within 0.6%, video2 12.77 s vs 12.77 s) and "run 4" (0 drops, within 0.13%); PlayerTest.fastDecodePlaysEveryFrameOnTimeAndPausesOnTheLast, slowDecodeDropsFramesButKeepsTheOriginalRate)
-- [x] D5 Foreground visibly cleaner than background when n1 < n2; effect reverses when swapped ([C/P3.R] real labels, video2: (2,5) fg 47.78 / bg 33.99 dB, (5,2) fg 34.41 / bg 48.05 dB, RESULTS.md "P3.R D5 swap"; all 4 clips at (2,5) fg 13 to 14 dB above bg, RESULTS.md W2; images docs/img/p3r_video2_n2_5_side_1to1.png, p3r_video2_n5_2_side_1to1.png, p3r_video2_swap_crop_x3.png; decoder 1:1 side-by-side view)
+| ID | Requirement | Met | Proof |
+|---|---|---|---|
+| B1 | Frame 0 is an I frame | Yes | Every baseline frame is coded on its own; frame 0 reuses frame 1's labels: `SegmenterTemporalTest.runEmitsOneLabelSetPerFrameFrameZeroCopiesFrameOneAndIsDeterministic` |
+| B2 | Later frames split into 16x16 macroblocks | Yes | `MotionEstimatorTest.recoversKnownShiftsIncludingNegative`; `PadTest.hd1080PadsBottomRowsByReplication` (1080 padded to 1088) |
+| B3 | One motion vector per macroblock, against the previous frame | Yes | `MotionEstimatorTest.matchesTextbookOracleOnMixedContent`; `HierarchicalSearchTest.recovers30PixelShiftThatFullSearch16Cannot` |
+| B4 | Block matching by MAD, brute force or a fast search | Yes | Full search kept as the reference, fast 3-level search by default; they agree on 89.9% to 95.9% of textured blocks (RESULTS "Segmentation") |
+| B5 | Search on one component (Y preferred) | Yes | Search runs on Y only: `ColorConvTest.knownValues` |
+| B6 | Background is zero motion or the camera's motion | Yes | Camera motion fitted as a homography, which includes the brief's single constant vector: `GlobalMotionTest.homographyWithThirtyPercentOutliersRecoveredWithinHalfPixel`, `SegmenterCameraTest.blockThatMovesWithTheCameraIsExplainedEvenIfItsOwnVectorIsWrong` |
+| B7 | Foreground regions are contiguous and consistent in direction | Yes | `SegmenterGroupTest.consistencyRule`, `SegmenterGroupTest.randomDirectionAliasPatchIsDropped`; naive vs final on the same vectors: SAL 8.68% to 1.07% (RESULTS "Segmentation") |
+| B8 | Several independently moving regions | Yes | `SegmenterGroupTest.touchingPatchesMovingOppositeWaysBecomeTwoRegions` |
+| B9 | Labels from motion only, not content | Yes | Inputs are motion vectors, match errors and the camera model. Texture only decides whether a vector is trusted; no colour, shape or object detection. |
+| B10 | Every macroblock of every frame is labelled | Yes | `SegmenterTemporalTest.runStatsCoverEveryFrame`, `LabelsIOTest.roundTripRandomAccessAndUnsignedIds` |
+| B11 | Visual demarcation (green background, coloured foreground) | Yes | `VizSegTest.backgroundTintIsGreenAndForegroundRed`; `docs/img/p1_final_*.jpg` |
 
-## E. Player and run time
-- [x] E1 Own display code for input and output video ([C/P3] Display: own bilinear scaler (P0-D8), packed path, Display.View; DisplayScalerTest, DisplayViewTest; original read by OriginalVideo, OriginalVideoTest)
-- [x] E2 Play, PAUSE, STEP frame by frame ([C/P3] Mac keys check Nov 12 (WORKLOG [C/P3] "P3.3 DONE"); PlayerTest.pauseStepAndStepBackMoveOneFrameAndStopTheClock; step back: FrameCacheTest.stepBackFiftyFrom100CrossesTheCacheBoundaryCorrectly)
-- [x] E3 Output can be compared against the original ([C/P3] side by side + 1:1 zoom + overlay: docs/img/p3_SAL_n2_5_side_1to1.png, p3_SAL_n5_2_side_1to1.png, p3_video2_n2_5_overlay.png; Mac view check and 0 drops with the original at 30.0 fps: RESULTS.md "P3.4 / P3.4b Mac checks, Nov 13")
-- [x] E4 Encode + decode finish within 10 minutes [C/P3.R, re-cited A]: Mac, SAL (largest clip), real files: encode `./myencoder data/SAL.mp4 2 5` 1:51 + decode/play `./mydecoder data/SAL.cmp` 14.57 s for the 14.57 s clip, 0 dropped (both RESULTS "W2 / D13 Mac numbers") = about 2 min 6 s; RESULTS "P3.R E4"
+## Compression
 
-## F. Extra credit (only after A to E are green)
-- [x] F1 Motion-compensated prediction: encode residual + one MV per macroblock [C/P4-A]: optional .cmp mode 2 via `java -cp build/libs/layer-codec.jar codec.tools.McEncode <mp4> n1 n2`, one vector per macroblock, residual from the reconstructed previous frame, I frame every 2 (P4-L3); all 4 clips at (2,5) 36 to 51% smaller than baseline within 0.23 dB per layer (RESULTS "P4 final"); plays with plain ./mydecoder (GopPipeline), 0 dropped on 1080p (sandbox virtual screen; Mac in final check); McCodecTest (6), GopPipelineTest (6), McEncodeTest (2); baseline unchanged: GoldenBaselineTest
-- [x] F2 Better coefficient scan order (zigzag) to help compression [C/P4-B, ticked A]: optional .cmp mode 1 (`--mode rle`, off by default), zigzag + run-length; 1.18x to 1.23x smaller, decode 76.2 vs 61.0 fps, pixel-identical (RESULTS "P4-B zigzag + run-length", "Quiet run"); RunLengthTest (zigzag order, lossless round trip), FrameDecodeTest.mode1DecodesToTheSamePixelsAsBaselineThroughThePipeline, CmpRecodeTest; baseline unchanged: GoldenBaselineTest (byte-identical payload and file)
+| ID | Requirement | Met | Proof |
+|---|---|---|---|
+| C1 | 8x8 blocks inherit their 16x16 macroblock's label | Yes | `CmpFormatTest.blockTypeOf8x8IsItsMacroblockLabel`; 0 mismatches over 34.1 million blocks on the real files (RESULTS "Compression") |
+| C2 | 8x8 DCT on R, G and B | Yes | `DctTest.matchesTextbookOracleOnRandomBlocks`, `FrameEncoderTest.roundTripAtN0IsNearlyExact`; 59 dB at n = 0 (RESULTS "Compression") |
+| C3 | Uniform quantization, every step 2^n | Yes | `QuantTest.errorIsAtMostHalfAStepAndGrowsWithN`, `QuantTest.halvesRoundAwayFromZeroSymmetrically` |
+| C4 | Blocks written in scan line order | Yes | `CmpFormatTest.blocksAreInScanLineOrder385BytesEach` |
+| C5 | File holds n1, n2, then per block: type and 64 coefficients for each of 3 channels | Yes | `CmpFormatTest.threeFramesRoundTripIdenticallyWithAndWithoutZlib`; `CmpDumpTest.printsTheBriefsTextLayout` prints any frame in the brief's text layout |
+| C6 | Baseline without zigzag or entropy coding is acceptable | Yes | Coefficients stored row by row; zlib is lossless packing only (`ZioTest.quantizedCoefficientsCompressWell`); baseline bytes pinned by `GoldenBaselineTest.baselineFileIsByteIdentical` |
 
-## G. Brief is silent; decided in DECISIONS.md
-Language and libraries (D1), sizes not divisible by 16 (D5), where size/fps/frame count live (D7), text vs binary .cmp (D7), frame 0 label (D4), rotation metadata (D11), audio (D11), report and presentation format, demo logistics.
+## Decoder
+
+| ID | Requirement | Met | Proof |
+|---|---|---|---|
+| D1 | Parses n1, n2, block types and coefficients | Yes | `CmpFormatTest.ruleMagicRejected` and the other rule tests; `DecodeCoreTest.returnsTheBlockTypeMap` |
+| D2 | Dequantizes each block with n1 or n2 by its type | Yes | `DecodeCoreTest.storedThreeRebuildsAs12InForegroundAnd96InBackground` |
+| D3 | Inverse DCT, rebuild, display | Yes | `DecodeCoreTest.nZeroRoundTripIsNearlyExactAndCropped`, `DctTest.zeroSkipInverseIsBitIdenticalToPlainInverse` |
+| D4 | Plays at the original frame rate | Yes | `PlayerTest.slowDecodeDropsFramesButKeepsTheOriginalRate`, `ClockTest.ntscRationalRate`; all 12 files within 0.10% of the clip length (RESULTS "Final check") |
+| D5 | Foreground cleaner when n1 < n2, reversed when swapped | Yes | SAL swap (RESULTS "Compression"); `docs/img/p3r_SAL_swap_crop_x3.png` |
+
+## Player and time limit
+
+| ID | Requirement | Met | Proof |
+|---|---|---|---|
+| E1 | Own display code for input and output | Yes | Own bilinear scaler: `DisplayScalerTest.halvingAveragesNeighbours`; Java2D scaling was 100% late, own scaler 0.5% (RESULTS "Decoder and playback") |
+| E2 | Play, pause, step frame by frame | Yes | `PlayerTest.pauseStepAndStepBackMoveOneFrameAndStopTheClock`; step back: `FrameCacheTest.stepBackFiftyFrom100CrossesTheCacheBoundaryCorrectly` |
+| E3 | Output can be compared with the original | Yes | Side by side, 1:1 zoom and foreground overlay: `DisplayViewTest.sideBySidePutsDecodedLeftAndOriginalRight`, `DisplayViewTest.zoomedSideBySideShowsTheSameRegionInBothHalves`; `docs/img/p3_SAL_n2_5_side_1to1.png` |
+| E4 | Encode plus decode within 10 minutes | Yes | Worst case SAL (5,2): 130 s encode plus real-time playback (RESULTS "Final check") |
+
+## Extra credit
+
+| ID | Requirement | Met | Proof |
+|---|---|---|---|
+| F1 | Motion-compensated prediction: residual plus one vector per macroblock | Yes | Mode 2: `McCodecTest.encoderAndDecoderReferencesStayBitIdenticalOverSeveralGroups`; 36% to 51% smaller (RESULTS "Extra credit") |
+| F2 | Better coefficient order (zigzag) | Yes | Mode 1: `RunLengthTest.zigzagIsTheJpegOrderAndVisitsEveryCoefficientOnce`; 29% to 40% smaller with identical pixels (RESULTS "Extra credit") |
+
+## Where the brief is silent
+
+Language and libraries, frame sizes not divisible by 16, rotated input, where size and frame rate are stored, text versus binary file, the label for frame 0, and audio. Each choice is in `docs/DECISIONS.md`.

@@ -1,6 +1,6 @@
 # Slide notes: segmentation (Window A)
 
-Seven slides, about 4 minutes. Each slide: what to put on it, images from `docs/img/`, what to say, the numbers. Numbers are Mac unless marked sandbox; sources in `docs/RESULTS.md` (section names in brackets) and `docs/decision-log/P1-segmentation.md` (entry ids).
+Seven slides, about 4 minutes. Each slide: what to put on it, images from `docs/img/`, what to say, the numbers. Numbers are Mac unless marked sandbox; sources in `docs/RESULTS.md` (section names in brackets) and `docs/history/decision-log/P1-segmentation.md` (entry ids).
 
 ---
 
